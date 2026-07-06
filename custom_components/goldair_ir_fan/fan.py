@@ -9,7 +9,7 @@ from time import monotonic
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.components.remote import DOMAIN as REMOTE_DOMAIN, SERVICE_SEND_COMMAND
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -135,9 +135,9 @@ class GoldairIRFanEntity(FanEntity):
             REMOTE_DOMAIN,
             SERVICE_SEND_COMMAND,
             {
-                ATTR_ENTITY_ID: self._remote_entity_id,
                 "command": [command],
             },
+            target={"entity_id": self._remote_entity_id},
             blocking=True,
         )
         self._last_ir_command_at = monotonic()
