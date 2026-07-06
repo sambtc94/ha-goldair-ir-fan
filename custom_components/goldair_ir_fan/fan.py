@@ -128,6 +128,11 @@ class GoldairIRFanEntity(FanEntity):
         self._sync_attrs_from_runtime_state()
         # Track when the last IR command was sent so we can enforce the delay.
         self._last_ir_command_at: float | None = None
+        # Guard against overlapping automatic on/off commands triggered by the
+        # power sensor.  HA's event loop is single-threaded, but successive
+        # sensor updates can arrive while a previous async_turn_on/off is still
+        # executing (awaiting IR blasts).  This flag prevents re-entrant calls.
+        self._auto_control_busy: bool = False
 
     # ------------------------------------------------------------------
     # HA lifecycle hooks
@@ -215,19 +220,33 @@ class GoldairIRFanEntity(FanEntity):
         threshold = self._runtime_state.power_threshold
 
         if watts > threshold and not self._runtime_state.is_on:
+            if self._auto_control_busy:
+                return
             _LOGGER.debug(
                 "Power sensor reads %.1f W (> %.1f W threshold); turning fan on",
                 watts,
                 threshold,
             )
-            await self.async_turn_on()
+            self._auto_control_busy = True
+            try:
+                # Turn on at low speed explicitly so the behaviour is predictable
+                # regardless of any future changes to async_turn_on defaults.
+                await self.async_turn_on(percentage=FAN_SPEEDS[0])
+            finally:
+                self._auto_control_busy = False
         elif watts <= threshold and self._runtime_state.is_on:
+            if self._auto_control_busy:
+                return
             _LOGGER.debug(
                 "Power sensor reads %.1f W (<= %.1f W threshold); turning fan off",
                 watts,
                 threshold,
             )
-            await self.async_turn_off()
+            self._auto_control_busy = True
+            try:
+                await self.async_turn_off()
+            finally:
+                self._auto_control_busy = False
 
     def _publish_runtime_state(self) -> None:
         """Broadcast a runtime-state-changed signal to all sibling entities."""
