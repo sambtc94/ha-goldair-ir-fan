@@ -93,6 +93,8 @@ class GoldairIRFanPowerSensor(SensorEntity):
         self._signal = signal
         self._attr_device_info = device_info
         self._attr_unique_id = f"{entry_id}_power"
+        # Latest power reading, updated on each sensor state-change event.
+        self._current_watts: float | None = None
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to power-monitor and runtime-state updates."""
@@ -116,7 +118,7 @@ class GoldairIRFanPowerSensor(SensorEntity):
             state = self.hass.states.get(self._runtime_state.power_monitor_entity)
             if state is not None and state.state not in {STATE_UNAVAILABLE, STATE_UNKNOWN}:
                 try:
-                    self._runtime_state.current_power_watts = float(state.state)
+                    self._current_watts = float(state.state)
                 except (ValueError, TypeError):
                     pass
 
@@ -128,12 +130,12 @@ class GoldairIRFanPowerSensor(SensorEntity):
         """Update the displayed value when the external power sensor changes."""
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state in {STATE_UNAVAILABLE, STATE_UNKNOWN}:
-            self._runtime_state.current_power_watts = None
+            self._current_watts = None
             self.async_write_ha_state()
             return
 
         try:
-            self._runtime_state.current_power_watts = float(new_state.state)
+            self._current_watts = float(new_state.state)
         except (ValueError, TypeError):
             _LOGGER.debug(
                 "Power sensor %s reported non-numeric state '%s'; ignoring",
@@ -147,4 +149,4 @@ class GoldairIRFanPowerSensor(SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the latest power reading in watts."""
-        return self._runtime_state.current_power_watts
+        return self._current_watts

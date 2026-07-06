@@ -194,11 +194,11 @@ class GoldairIRFanEntity(FanEntity):
     async def _handle_power_sensor_state_change(self, event: Event) -> None:
         """React to power-sensor state changes to keep the fan in sync.
 
-        If the reported wattage rises above the configured threshold and the
+        Compares the current (instantaneous) wattage directly against the
+        configured threshold.  If the reading rises above the threshold and the
         integration believes the fan is off, the fan is turned on at low speed.
-
-        If the reported wattage drops to or below the threshold and the
-        integration believes the fan is on, the fan is turned off.
+        If it drops to or below the threshold and the fan is believed to be on,
+        the fan is turned off.
 
         States that cannot be parsed as a number (unavailable, unknown, etc.)
         are silently ignored to avoid spurious commands.
@@ -232,6 +232,9 @@ class GoldairIRFanEntity(FanEntity):
             )
             self._auto_control_busy = True
             try:
+                # FAN_SPEEDS[0] is the lowest speed step ("low"). Keep
+                # this explicit so auto-on behavior remains deterministic even
+                # if async_turn_on defaults ever change.
                 await self.async_turn_on(percentage=FAN_SPEEDS[0])
             finally:
                 self._auto_control_busy = False

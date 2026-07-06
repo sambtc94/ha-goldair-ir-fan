@@ -58,5 +58,3 @@ class GoldairIRFanRuntimeState:
         # Power-monitor settings (populated from config entry options/data).
         self.power_monitor_entity: str | None = power_monitor_entity
         self.power_threshold: float = power_threshold
-        # Latest power reading received from the power monitor sensor (None until first update).
-        self.current_power_watts: float | None = None
