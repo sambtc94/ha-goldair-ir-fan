@@ -20,7 +20,7 @@ SPEED_TO_PERCENTAGE = {
     "medium": FAN_SPEEDS[1],
     "high": FAN_SPEEDS[2],
 }
-PERCENTAGE_TO_SPEED = {value: key for key, value in SPEED_TO_PERCENTAGE.items() if value > 0}
+PERCENTAGE_TO_SPEED = {value: key for key, value in SPEED_TO_PERCENTAGE.items()}
 
 
 async def async_setup_entry(
@@ -87,7 +87,7 @@ class GoldairIRPresetOverrideSelectEntity(SelectEntity):
         if option not in PRESET_MODES:
             return
         self._runtime_state.preset_mode = option
-        if self._runtime_state.is_on and self._runtime_state.percentage <= 0:
+        if self._runtime_state.is_on and self._runtime_state.percentage == 0:
             self._runtime_state.percentage = FAN_SPEEDS[0]
         async_dispatcher_send(self.hass, self._signal)
 
@@ -127,7 +127,7 @@ class GoldairIRSpeedOverrideSelectEntity(SelectEntity):
     @property
     def current_option(self) -> str:
         """Return current speed override option."""
-        if not self._runtime_state.is_on or self._runtime_state.percentage <= 0:
+        if not self._runtime_state.is_on:
             return "off"
         return PERCENTAGE_TO_SPEED.get(self._runtime_state.percentage, "low")
 
