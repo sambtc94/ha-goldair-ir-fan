@@ -23,6 +23,7 @@ it via the override switch/select entities.
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import logging
 from time import monotonic
 
@@ -30,10 +31,11 @@ from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.components.remote import DOMAIN as REMOTE_DOMAIN, SERVICE_SEND_COMMAND
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, Event
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     CONF_IR_EMITTER,
@@ -45,6 +47,7 @@ from .const import (
     IR_BLOB_OSC_TOGGLE,
     IR_BLOB_POWER_TOGGLE,
     IR_BLOB_SPEED_CYCLE,
+    POWER_MONITOR_AVERAGE_WINDOW_SECONDS,
     PRESET_MODES,
     state_update_signal,
 )
@@ -127,6 +130,14 @@ class GoldairIRFanEntity(FanEntity):
         self._sync_attrs_from_runtime_state()
         # Track when the last IR command was sent so we can enforce the delay.
         self._last_ir_command_at: float | None = None
+        # Keep a rolling buffer of recent power samples for 60-second averaging.
+        self._timestamped_power_samples: deque[tuple[float, float]] = deque()
+        self._power_monitor_started_at: float | None = None
+        # Guard against overlapping automatic on/off commands triggered by the
+        # power sensor.  HA's event loop is single-threaded, but successive
+        # sensor updates can arrive while a previous async_turn_on/off is still
+        # executing (awaiting IR blasts).  This flag prevents re-entrant calls.
+        self._auto_control_busy: bool = False
 
     # ------------------------------------------------------------------
     # HA lifecycle hooks
@@ -155,6 +166,16 @@ class GoldairIRFanEntity(FanEntity):
             )
         )
 
+        # Subscribe to the power-monitor sensor if one is configured.
+        if self._runtime_state.power_monitor_entity:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass,
+                    [self._runtime_state.power_monitor_entity],
+                    self._handle_power_sensor_state_change,
+                )
+            )
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -174,6 +195,96 @@ class GoldairIRFanEntity(FanEntity):
         """Refresh HA state when the shared runtime state is updated by another entity."""
         self._sync_attrs_from_runtime_state()
         self.schedule_update_ha_state()
+
+    def _add_power_sample(self, watts: float) -> None:
+        """Add a power reading and keep only the last 60 seconds of samples."""
+        now = monotonic()
+        if self._power_monitor_started_at is None:
+            self._power_monitor_started_at = now
+        self._timestamped_power_samples.append((now, watts))
+        cutoff = now - POWER_MONITOR_AVERAGE_WINDOW_SECONDS
+        while self._timestamped_power_samples and self._timestamped_power_samples[0][0] < cutoff:
+            self._timestamped_power_samples.popleft()
+
+    def _rolling_power_average(self) -> float | None:
+        """Return the average watts from the configured rolling sample window."""
+        if not self._timestamped_power_samples:
+            return None
+        return sum(watts for _, watts in self._timestamped_power_samples) / len(
+            self._timestamped_power_samples
+        )
+
+    async def _handle_power_sensor_state_change(self, event: Event) -> None:
+        """React to power-sensor state changes to keep the fan in sync.
+
+        If the 60-second rolling average rises above the configured threshold and the
+        integration believes the fan is off, the fan is turned on at low speed.
+
+        If the 60-second rolling average drops to or below the threshold and the
+        integration believes the fan is on, the fan is turned off.
+
+        States that cannot be parsed as a number (unavailable, unknown, etc.)
+        are silently ignored to avoid spurious commands.
+        """
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state in {STATE_UNAVAILABLE, STATE_UNKNOWN}:
+            return
+
+        try:
+            watts = float(new_state.state)
+        except (ValueError, TypeError):
+            _LOGGER.debug(
+                "Power sensor %s reported non-numeric state '%s'; ignoring",
+                self._runtime_state.power_monitor_entity,
+                new_state.state,
+            )
+            return
+
+        self._add_power_sample(watts)
+        if (
+            self._power_monitor_started_at is not None
+            and monotonic() - self._power_monitor_started_at
+            < POWER_MONITOR_AVERAGE_WINDOW_SECONDS
+        ):
+            # Wait until one full averaging window has elapsed so startup spikes
+            # do not trigger an immediate on/off action from incomplete data.
+            return
+
+        average_watts = self._rolling_power_average()
+        if average_watts is None:
+            return
+
+        threshold = self._runtime_state.power_threshold
+
+        if average_watts > threshold and not self._runtime_state.is_on:
+            if self._auto_control_busy:
+                return
+            _LOGGER.debug(
+                "Power average %.1f W over last minute (> %.1f W threshold); turning fan on",
+                average_watts,
+                threshold,
+            )
+            self._auto_control_busy = True
+            try:
+                # FAN_SPEEDS[0] is the lowest speed step ("low"). Keep
+                # this explicit so auto-on behavior remains deterministic even
+                # if async_turn_on defaults ever change.
+                await self.async_turn_on(percentage=FAN_SPEEDS[0])
+            finally:
+                self._auto_control_busy = False
+        elif average_watts <= threshold and self._runtime_state.is_on:
+            if self._auto_control_busy:
+                return
+            _LOGGER.debug(
+                "Power average %.1f W over last minute (<= %.1f W threshold); turning fan off",
+                average_watts,
+                threshold,
+            )
+            self._auto_control_busy = True
+            try:
+                await self.async_turn_off()
+            finally:
+                self._auto_control_busy = False
 
     def _publish_runtime_state(self) -> None:
         """Broadcast a runtime-state-changed signal to all sibling entities."""
