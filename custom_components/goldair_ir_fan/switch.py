@@ -5,6 +5,7 @@ from __future__ import annotations
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -42,6 +43,8 @@ class GoldairIRPowerOverrideSwitchEntity(SwitchEntity):
 
     _attr_has_entity_name = True
     _attr_name = "Power override"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:power"
 
     def __init__(
         self,
@@ -93,6 +96,8 @@ class GoldairIROscillationOverrideSwitchEntity(SwitchEntity):
 
     _attr_has_entity_name = True
     _attr_name = "Oscillation override"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:rotate-3d-variant"
 
     def __init__(
         self,

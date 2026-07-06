@@ -2,15 +2,29 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DEFAULT_NAME, DOMAIN, FAN_SPEEDS, PRESET_MODES, state_update_signal
 from .state import GoldairIRFanRuntimeState
+
+_LOGGER = logging.getLogger(__name__)
+
+SPEED_OPTIONS = ["off", "low", "medium", "high"]
+SPEED_TO_PERCENTAGE = {
+    "off": 0,
+    "low": FAN_SPEEDS[0],
+    "medium": FAN_SPEEDS[1],
+    "high": FAN_SPEEDS[2],
+}
+PERCENTAGE_TO_SPEED = {value: key for key, value in SPEED_TO_PERCENTAGE.items()}
 
 
 async def async_setup_entry(
@@ -28,7 +42,10 @@ async def async_setup_entry(
         model="IR Fan",
     )
     async_add_entities(
-        [GoldairIRPresetOverrideSelectEntity(runtime_state, signal, device_info, entry.entry_id)]
+        [
+            GoldairIRPresetOverrideSelectEntity(runtime_state, signal, device_info, entry.entry_id),
+            GoldairIRSpeedOverrideSelectEntity(runtime_state, signal, device_info, entry.entry_id),
+        ]
     )
 
 
@@ -38,6 +55,8 @@ class GoldairIRPresetOverrideSelectEntity(SelectEntity):
     _attr_has_entity_name = True
     _attr_name = "Preset override"
     _attr_options = PRESET_MODES
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:weather-windy"
 
     def __init__(
         self,
@@ -72,8 +91,72 @@ class GoldairIRPresetOverrideSelectEntity(SelectEntity):
         if option not in PRESET_MODES:
             return
         self._runtime_state.preset_mode = option
-        self._runtime_state.is_on = True
-        if self._runtime_state.percentage <= 0:
+        if self._runtime_state.is_on and self._runtime_state.percentage == 0:
+            _LOGGER.warning(
+                "Preset override state drift detected (on with 0%% speed); defaulting speed to %s",
+                FAN_SPEEDS[0],
+            )
             self._runtime_state.percentage = FAN_SPEEDS[0]
-        self._runtime_state.oscillating = False
+        async_dispatcher_send(self.hass, self._signal)
+
+
+class GoldairIRSpeedOverrideSelectEntity(SelectEntity):
+    """Manual speed override for optimistic runtime state."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Speed override"
+    _attr_options = SPEED_OPTIONS
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:fan-chevron-up"
+
+    def __init__(
+        self,
+        runtime_state: GoldairIRFanRuntimeState,
+        signal: str,
+        device_info: DeviceInfo,
+        entry_id: str,
+    ) -> None:
+        """Initialize speed override select entity."""
+        self._runtime_state = runtime_state
+        self._signal = signal
+        self._attr_device_info = device_info
+        self._attr_unique_id = f"{entry_id}_speed_override"
+
+    async def async_added_to_hass(self) -> None:
+        """Register runtime-state listener."""
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._signal, self._handle_runtime_state_update)
+        )
+
+    def _handle_runtime_state_update(self) -> None:
+        """Handle shared runtime state updates."""
+        self.schedule_update_ha_state()
+
+    @property
+    def current_option(self) -> str:
+        """Return current speed override option."""
+        if not self._runtime_state.is_on:
+            return "off"
+        if self._runtime_state.percentage not in PERCENTAGE_TO_SPEED:
+            _LOGGER.warning(
+                "Speed override state drift detected (%s); defaulting option to low",
+                self._runtime_state.percentage,
+            )
+            return "low"
+        return PERCENTAGE_TO_SPEED[self._runtime_state.percentage]
+
+    async def async_select_option(self, option: str) -> None:
+        """Override speed state."""
+        percentage = SPEED_TO_PERCENTAGE.get(option)
+        if percentage is None:
+            return
+
+        if option == "off":
+            self._runtime_state.is_on = False
+            self._runtime_state.percentage = 0
+            self._runtime_state.oscillating = False
+            self._runtime_state.preset_mode = None
+        else:
+            self._runtime_state.is_on = True
+            self._runtime_state.percentage = percentage
         async_dispatcher_send(self.hass, self._signal)
