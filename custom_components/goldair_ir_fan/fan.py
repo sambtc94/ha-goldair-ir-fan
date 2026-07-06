@@ -131,7 +131,7 @@ class GoldairIRFanEntity(FanEntity):
         # Track when the last IR command was sent so we can enforce the delay.
         self._last_ir_command_at: float | None = None
         # Keep a rolling buffer of recent power samples for 60-second averaging.
-        self._power_samples: deque[tuple[float, float]] = deque()
+        self._timestamped_power_samples: deque[tuple[float, float]] = deque()
         self._power_monitor_started_at: float | None = None
         # Guard against overlapping automatic on/off commands triggered by the
         # power sensor.  HA's event loop is single-threaded, but successive
@@ -201,16 +201,18 @@ class GoldairIRFanEntity(FanEntity):
         now = monotonic()
         if self._power_monitor_started_at is None:
             self._power_monitor_started_at = now
-        self._power_samples.append((now, watts))
+        self._timestamped_power_samples.append((now, watts))
         cutoff = now - POWER_MONITOR_AVERAGE_WINDOW_SECONDS
-        while self._power_samples and self._power_samples[0][0] < cutoff:
-            self._power_samples.popleft()
+        while self._timestamped_power_samples and self._timestamped_power_samples[0][0] < cutoff:
+            self._timestamped_power_samples.popleft()
 
-    def _power_average_last_minute(self) -> float | None:
-        """Return the average watts from the rolling sample window."""
-        if not self._power_samples:
+    def _rolling_power_average(self) -> float | None:
+        """Return the average watts from the configured rolling sample window."""
+        if not self._timestamped_power_samples:
             return None
-        return sum(watts for _, watts in self._power_samples) / len(self._power_samples)
+        return sum(watts for _, watts in self._timestamped_power_samples) / len(
+            self._timestamped_power_samples
+        )
 
     async def _handle_power_sensor_state_change(self, event: Event) -> None:
         """React to power-sensor state changes to keep the fan in sync.
@@ -244,9 +246,11 @@ class GoldairIRFanEntity(FanEntity):
             and monotonic() - self._power_monitor_started_at
             < POWER_MONITOR_AVERAGE_WINDOW_SECONDS
         ):
+            # Wait until one full averaging window has elapsed so startup spikes
+            # do not trigger an immediate on/off action from incomplete data.
             return
 
-        average_watts = self._power_average_last_minute()
+        average_watts = self._rolling_power_average()
         if average_watts is None:
             return
 
