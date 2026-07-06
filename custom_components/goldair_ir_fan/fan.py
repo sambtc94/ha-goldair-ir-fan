@@ -9,8 +9,9 @@ from time import monotonic
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.components.remote import DOMAIN as REMOTE_DOMAIN, SERVICE_SEND_COMMAND
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -89,6 +90,15 @@ class GoldairIRFanEntity(FanEntity):
         self._sync_attrs_from_runtime_state()
         self._last_ir_command_at: float | None = None
 
+    @property
+    def available(self) -> bool:
+        """Return whether the configured remote entity is available."""
+        remote_state = self.hass.states.get(self._remote_entity_id)
+        return (
+            remote_state is not None
+            and remote_state.state not in {STATE_UNAVAILABLE, STATE_UNKNOWN}
+        )
+
     async def async_added_to_hass(self) -> None:
         """Register runtime-state listener."""
         self.async_on_remove(
@@ -122,15 +132,25 @@ class GoldairIRFanEntity(FanEntity):
             if elapsed < self._runtime_state.ir_command_delay_seconds:
                 await asyncio.sleep(self._runtime_state.ir_command_delay_seconds - elapsed)
 
-        await self.hass.services.async_call(
-            REMOTE_DOMAIN,
-            SERVICE_SEND_COMMAND,
-            {
-                ATTR_ENTITY_ID: self._remote_entity_id,
-                "command": command,
-            },
-            blocking=True,
-        )
+        try:
+            await self.hass.services.async_call(
+                REMOTE_DOMAIN,
+                SERVICE_SEND_COMMAND,
+                {
+                    ATTR_ENTITY_ID: self._remote_entity_id,
+                    "command": command,
+                },
+                blocking=True,
+            )
+        except HomeAssistantError as err:
+            _LOGGER.error(
+                "Failed to send IR command via remote entity %s: %s",
+                self._remote_entity_id,
+                err,
+            )
+            raise HomeAssistantError(
+                f"Failed to send IR command via remote entity {self._remote_entity_id}"
+            ) from err
         self._last_ir_command_at = monotonic()
 
     async def _async_power_on_if_needed(self) -> None:
