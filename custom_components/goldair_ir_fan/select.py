@@ -87,7 +87,7 @@ class GoldairIRPresetOverrideSelectEntity(SelectEntity):
         device_info: DeviceInfo,
         entry_id: str,
     ) -> None:
-        """Initialise the preset override select."""
+        """Initialize the preset override select."""
         self._runtime_state = runtime_state
         self._signal = signal
         self._attr_device_info = device_info
@@ -145,7 +145,7 @@ class GoldairIRSpeedOverrideSelectEntity(SelectEntity):
         device_info: DeviceInfo,
         entry_id: str,
     ) -> None:
-        """Initialise the speed override select."""
+        """Initialize the speed override select."""
         self._runtime_state = runtime_state
         self._signal = signal
         self._attr_device_info = device_info

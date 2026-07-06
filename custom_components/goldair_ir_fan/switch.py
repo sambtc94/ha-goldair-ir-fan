@@ -80,7 +80,7 @@ class GoldairIRPowerOverrideSwitchEntity(SwitchEntity):
         device_info: DeviceInfo,
         entry_id: str,
     ) -> None:
-        """Initialise the power override switch."""
+        """Initialize the power override switch."""
         self._runtime_state = runtime_state
         self._signal = signal
         self._attr_device_info = device_info
@@ -139,7 +139,7 @@ class GoldairIROscillationOverrideSwitchEntity(SwitchEntity):
         device_info: DeviceInfo,
         entry_id: str,
     ) -> None:
-        """Initialise the oscillation override switch."""
+        """Initialize the oscillation override switch."""
         self._runtime_state = runtime_state
         self._signal = signal
         self._attr_device_info = device_info

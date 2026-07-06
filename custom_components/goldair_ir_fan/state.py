@@ -13,17 +13,14 @@ so that sibling entities can refresh their HA state.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 from .const import IR_COMMAND_DELAY_SECONDS
 
 
-@dataclass
 class GoldairIRFanRuntimeState:
     """Shared optimistic state for all Goldair IR Fan entities.
 
-    Fields
-    ------
+    Attributes
+    ----------
     is_on
         Whether we believe the fan is currently running.
     percentage
@@ -37,17 +34,11 @@ class GoldairIRFanRuntimeState:
         entry options so that it survives HA restarts.
     """
 
-    is_on: bool = False
-    percentage: int = 0
-    oscillating: bool = False
-    preset_mode: str | None = None
-    # Initialised from the config entry; can be overridden at runtime.
-    ir_command_delay_seconds: float = field(default=IR_COMMAND_DELAY_SECONDS)
-
     def __init__(self, ir_command_delay_seconds: float = IR_COMMAND_DELAY_SECONDS) -> None:
-        """Initialise state with the configured IR delay."""
-        self.is_on = False
-        self.percentage = 0
-        self.oscillating = False
-        self.preset_mode = None
-        self.ir_command_delay_seconds = ir_command_delay_seconds
+        """Initialize state with the configured IR delay."""
+        self.is_on: bool = False
+        self.percentage: int = 0
+        self.oscillating: bool = False
+        self.preset_mode: str | None = None
+        # Initialized from the config entry; can be updated live when options change.
+        self.ir_command_delay_seconds: float = ir_command_delay_seconds

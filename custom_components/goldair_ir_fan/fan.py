@@ -104,7 +104,7 @@ class GoldairIRFanEntity(FanEntity):
         remote_entity: str,
         runtime_state: GoldairIRFanRuntimeState,
     ) -> None:
-        """Initialise the fan entity with its config-entry ID and remote entity."""
+        """Initialize the fan entity with its config-entry ID and remote entity."""
         self._entry_id = entry_id
         self._runtime_state = runtime_state
         # The dispatcher signal key shared with sibling override entities.
