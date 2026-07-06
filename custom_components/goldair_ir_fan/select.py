@@ -60,7 +60,7 @@ class GoldairIRPresetOverrideSelectEntity(SelectEntity):
 
     def _handle_runtime_state_update(self) -> None:
         """Handle shared runtime state updates."""
-        self.async_write_ha_state()
+        self.schedule_update_ha_state()
 
     @property
     def current_option(self) -> str | None:

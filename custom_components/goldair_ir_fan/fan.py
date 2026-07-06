@@ -118,7 +118,7 @@ class GoldairIRFanEntity(FanEntity):
     def _handle_runtime_state_update(self) -> None:
         """Handle shared runtime state updates."""
         self._sync_attrs_from_runtime_state()
-        self.async_write_ha_state()
+        self.schedule_update_ha_state()
 
     def _publish_runtime_state(self) -> None:
         """Notify all entities that runtime state has changed."""

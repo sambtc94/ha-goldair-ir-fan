@@ -64,7 +64,7 @@ class GoldairIRPowerOverrideSwitchEntity(SwitchEntity):
 
     def _handle_runtime_state_update(self) -> None:
         """Handle shared runtime state updates."""
-        self.async_write_ha_state()
+        self.schedule_update_ha_state()
 
     @property
     def is_on(self) -> bool:
@@ -115,7 +115,7 @@ class GoldairIROscillationOverrideSwitchEntity(SwitchEntity):
 
     def _handle_runtime_state_update(self) -> None:
         """Handle shared runtime state updates."""
-        self.async_write_ha_state()
+        self.schedule_update_ha_state()
 
     @property
     def is_on(self) -> bool:
