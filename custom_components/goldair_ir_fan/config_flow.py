@@ -25,7 +25,7 @@ class GoldairIRFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(remote_entity)
             self._abort_if_unique_id_configured()
 
-            # Persist the selected emitter for entity command routing.
+            # Persist the selected remote entity for command routing.
             return self.async_create_entry(
                 title=DEFAULT_NAME,
                 data={CONF_REMOTE_ENTITY: remote_entity},
