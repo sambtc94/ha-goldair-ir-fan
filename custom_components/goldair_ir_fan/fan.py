@@ -35,7 +35,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Goldair IR Fan entity from a config entry."""
-    async_add_entities([GoldairIRFanEntity(hass, entry.data[CONF_IR_BLASTER])])
+    async_add_entities([GoldairIRFanEntity(entry.data[CONF_IR_BLASTER])])
 
 
 class GoldairIRFanEntity(FanEntity):
@@ -53,9 +53,8 @@ class GoldairIRFanEntity(FanEntity):
     _attr_speed_count = 3
     _attr_preset_modes = PRESET_MODES
 
-    def __init__(self, hass: HomeAssistant, ir_blaster: str) -> None:
+    def __init__(self, ir_blaster: str) -> None:
         """Initialize the fan."""
-        self.hass = hass
         self._ir_blaster = ir_blaster
         self._attr_is_on = False
         self._attr_percentage = 0
@@ -107,13 +106,14 @@ class GoldairIRFanEntity(FanEntity):
         if self.percentage in SPEEDS:
             current_index = SPEEDS.index(self.percentage)
 
-        target_index = min(range(len(SPEEDS)), key=lambda i: abs(SPEEDS[i] - percentage))
+        target_speed = min(SPEEDS, key=lambda speed: abs(speed - percentage))
+        target_index = SPEEDS.index(target_speed)
         steps = (target_index - current_index) % len(SPEEDS)
 
         for _ in range(steps):
             await self._send_ir_block(IR_BLOCK_SPEED_CYCLE)
 
-        self._attr_percentage = SPEEDS[target_index]
+        self._attr_percentage = target_speed
         self.async_write_ha_state()
 
     async def async_oscillate(self, oscillating: bool) -> None:
