@@ -138,7 +138,7 @@ class GoldairIRFanEntity(FanEntity):
                 SERVICE_SEND_COMMAND,
                 {
                     ATTR_ENTITY_ID: self._remote_entity_id,
-                    "command": command,
+                    "command": [command],
                 },
                 blocking=True,
             )
@@ -149,7 +149,7 @@ class GoldairIRFanEntity(FanEntity):
                 err,
             )
             raise HomeAssistantError(
-                f"Failed to send IR command via remote entity {self._remote_entity_id}"
+                f"Failed to send IR command via remote entity {self._remote_entity_id}: {err}"
             ) from err
         self._last_ir_command_at = monotonic()
 
