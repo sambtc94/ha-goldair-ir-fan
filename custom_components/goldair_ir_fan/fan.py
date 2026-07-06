@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import deque
 from time import monotonic
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
@@ -134,9 +133,11 @@ class GoldairIRFanEntity(FanEntity):
         # sensor updates can arrive while a previous callback is still running.
         # This flag prevents re-entrant state writes.
         self._auto_control_busy: bool = False
-        # Rolling power samples (monotonic_ts, watts) used for lag-window
-        # averaging before threshold decisions.
-        self._power_samples: deque[tuple[float, float]] = deque()
+        # Last numeric power sensor reading seen by this entity.
+        self._latest_power_watts: float | None = None
+        # Pending delayed confirmation task for threshold handling.
+        self._pending_override_task: asyncio.Task | None = None
+        self._pending_override_target_is_on: bool | None = None
 
     # ------------------------------------------------------------------
     # HA lifecycle hooks
@@ -195,12 +196,17 @@ class GoldairIRFanEntity(FanEntity):
         self._sync_attrs_from_runtime_state()
         self.schedule_update_ha_state()
 
+    async def async_will_remove_from_hass(self) -> None:
+        """Cancel pending delayed power-confirmation work on entity removal."""
+        self._cancel_pending_override_confirmation()
+
     async def _handle_power_sensor_state_change(self, event: Event) -> None:
         """React to power-sensor state changes by updating power override state.
 
-        Readings are averaged across the configured lag window before comparing
-        against the threshold.  This avoids immediate toggles from short-lived
-        spikes and sensor lag.
+        When the reading crosses threshold relative to current optimistic power
+        state, a delayed confirmation timer is started.  Once that timer elapses
+        we re-check the latest reading and only apply the override if it is
+        still on the same side of the threshold.
 
         If the averaged reading rises above the threshold and the integration
         believes the fan is off, the optimistic runtime state is overridden to
@@ -225,68 +231,78 @@ class GoldairIRFanEntity(FanEntity):
             )
             return
 
-        now = monotonic()
+        self._latest_power_watts = watts
+        threshold = self._runtime_state.power_threshold
         lag_seconds = max(0.0, self._runtime_state.power_lag_seconds)
+        target_is_on = watts > threshold
 
-        self._power_samples.append((now, watts))
-        self._prune_power_samples(now, lag_seconds)
+        # No change needed; cancel any previously pending opposite confirmation.
+        if target_is_on == self._runtime_state.is_on:
+            self._cancel_pending_override_confirmation()
+            return
 
-        if lag_seconds > 0.0:
-            oldest_sample_age = now - self._power_samples[0][0]
-            if oldest_sample_age < lag_seconds:
+        # Keep existing timer if it is already waiting for the same target.
+        if self._pending_override_target_is_on == target_is_on:
+            return
+
+        self._cancel_pending_override_confirmation()
+        self._pending_override_target_is_on = target_is_on
+        self._pending_override_task = self.hass.async_create_task(
+            self._confirm_and_apply_power_override(target_is_on, threshold, lag_seconds)
+        )
+
+    async def _confirm_and_apply_power_override(
+        self,
+        target_is_on: bool,
+        threshold: float,
+        lag_seconds: float,
+    ) -> None:
+        """Wait lag duration, re-check latest power, then apply override if still valid."""
+        try:
+            if lag_seconds > 0.0:
+                await asyncio.sleep(lag_seconds)
+
+            watts = self._latest_power_watts
+            if watts is None:
+                return
+
+            still_matches = watts > threshold if target_is_on else watts <= threshold
+            if not still_matches:
                 _LOGGER.debug(
-                    "Power lag window still filling (%.1f/%.1f s); deferring override update",
-                    oldest_sample_age,
+                    "Power %.1f W no longer matches delayed target after %.1f s; skipping override",
+                    watts,
                     lag_seconds,
                 )
                 return
 
-        averaged_watts = self._average_power_samples()
-        threshold = self._runtime_state.power_threshold
-
-        if averaged_watts > threshold and not self._runtime_state.is_on:
-            if self._auto_control_busy:
+            if target_is_on == self._runtime_state.is_on or self._auto_control_busy:
                 return
+
             _LOGGER.debug(
-                "Averaged power %.1f W (> %.1f W threshold); setting power override on",
-                averaged_watts,
-                threshold,
+                "Power %.1f W still %s threshold after %.1f s; setting power override %s",
+                watts,
+                ">" if target_is_on else "<=",
+                lag_seconds,
+                "on" if target_is_on else "off",
             )
             self._auto_control_busy = True
             try:
-                self._set_power_override_state(True)
+                self._set_power_override_state(target_is_on)
             finally:
                 self._auto_control_busy = False
-        elif averaged_watts <= threshold and self._runtime_state.is_on:
-            if self._auto_control_busy:
-                return
-            _LOGGER.debug(
-                "Averaged power %.1f W (<= %.1f W threshold); setting power override off",
-                averaged_watts,
-                threshold,
-            )
-            self._auto_control_busy = True
-            try:
-                self._set_power_override_state(False)
-            finally:
-                self._auto_control_busy = False
-
-    def _prune_power_samples(self, now: float, lag_seconds: float) -> None:
-        """Drop power samples that are older than the lag window."""
-        if lag_seconds <= 0.0:
-            # Keep only the latest sample when averaging is disabled.
-            while len(self._power_samples) > 1:
-                self._power_samples.popleft()
+        except asyncio.CancelledError:
             return
+        finally:
+            if asyncio.current_task() is self._pending_override_task:
+                self._pending_override_task = None
+                self._pending_override_target_is_on = None
 
-        cutoff = now - lag_seconds
-        while self._power_samples and self._power_samples[0][0] < cutoff:
-            self._power_samples.popleft()
-
-    def _average_power_samples(self) -> float:
-        """Return the arithmetic mean of currently retained power samples."""
-        total = sum(sample_watts for _, sample_watts in self._power_samples)
-        return total / len(self._power_samples)
+    def _cancel_pending_override_confirmation(self) -> None:
+        """Cancel any in-flight delayed threshold confirmation task."""
+        if self._pending_override_task is not None:
+            self._pending_override_task.cancel()
+            self._pending_override_task = None
+            self._pending_override_target_is_on = None
 
     def _set_power_override_state(self, is_on: bool) -> None:
         """Apply the same optimistic state change as the power-override switch.

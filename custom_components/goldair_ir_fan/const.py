@@ -35,7 +35,7 @@ CONF_POWER_MONITOR_ENTITY = "power_monitor_entity"
 # Readings above this value set override power state to on; at/below sets off.
 CONF_POWER_THRESHOLD = "power_threshold"
 
-# Key for the averaging lag window (seconds) used for power-monitor decisions.
+# Key for the confirmation delay (seconds) used for power-monitor decisions.
 CONF_POWER_LAG_SECONDS = "power_lag_seconds"
 
 # ---------------------------------------------------------------------------
@@ -80,10 +80,10 @@ POWER_THRESHOLD_MIN = 0.0              # watts
 POWER_THRESHOLD_MAX = 500.0            # watts
 POWER_THRESHOLD_STEP = 0.5            # step granularity for the UI slider
 
-# Default averaging window for power decisions. Readings are averaged over this
-# window before toggling optimistic power override.
-DEFAULT_POWER_LAG_SECONDS = 300.0      # 5 minutes
-POWER_LAG_MIN_SECONDS = 0.0            # 0 = no averaging window
+# Default confirmation delay for power decisions. Readings must remain beyond
+# threshold for this long before toggling optimistic power override.
+DEFAULT_POWER_LAG_SECONDS = 60.0       # 1 minute
+POWER_LAG_MIN_SECONDS = 0.0            # 0 = immediate threshold handling
 POWER_LAG_MAX_SECONDS = 3600.0         # 1 hour upper bound
 POWER_LAG_STEP_SECONDS = 1.0           # step granularity for the UI slider
 

@@ -45,8 +45,8 @@ class GoldairIRFanRuntimeState:
         strictly above this value set override power state to on; readings at
         or below it set override power state to off.
     power_lag_seconds
-        Lag window (seconds) used to average power readings before applying
-        threshold decisions.  A value of ``0`` disables averaging.
+        Confirmation delay (seconds) before applying threshold decisions.
+        A value of ``0`` applies threshold decisions immediately.
     """
 
     def __init__(

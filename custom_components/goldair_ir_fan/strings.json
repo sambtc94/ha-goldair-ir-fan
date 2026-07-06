@@ -9,14 +9,14 @@
           "ir_command_delay": "IR command delay (seconds)",
           "power_monitor_entity": "Power monitor sensor (optional)",
           "power_threshold": "Power threshold (watts)",
-          "power_lag_seconds": "Power lag averaging window (seconds)"
+          "power_lag_seconds": "Power lag confirmation delay (seconds)"
         },
         "data_description": {
           "remote_entity": "The Home Assistant remote entity connected to your IR blaster (e.g. a Broadlink device).",
           "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands.",
           "power_monitor_entity": "A sensor that reports the fan's power draw in watts. When set, the integration updates the Power override state based on the threshold below.",
-          "power_threshold": "If the averaged power reads above this value Power override is set on; at or below it Power override is set off. Default is 10 W.",
-          "power_lag_seconds": "How long to average power readings before applying threshold decisions. Default is 300 seconds (5 minutes)."
+          "power_threshold": "If power is above this value Power override is set on; at or below it Power override is set off, after the delay below. Default is 10 W.",
+          "power_lag_seconds": "How long power must remain past threshold before applying override changes. Default is 60 seconds (1 minute)."
         }
       }
     }
@@ -30,13 +30,13 @@
           "ir_command_delay": "IR command delay (seconds)",
           "power_monitor_entity": "Power monitor sensor (optional)",
           "power_threshold": "Power threshold (watts)",
-          "power_lag_seconds": "Power lag averaging window (seconds)"
+          "power_lag_seconds": "Power lag confirmation delay (seconds)"
         },
         "data_description": {
           "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands.",
           "power_monitor_entity": "A sensor that reports the fan's power draw in watts. Leave blank to disable automatic Power override updates.",
-          "power_threshold": "If the averaged power reads above this value Power override is set on; at or below it Power override is set off. Default is 10 W.",
-          "power_lag_seconds": "How long to average power readings before applying threshold decisions. Default is 300 seconds (5 minutes)."
+          "power_threshold": "If power is above this value Power override is set on; at or below it Power override is set off, after the delay below. Default is 10 W.",
+          "power_lag_seconds": "How long power must remain past threshold before applying override changes. Default is 60 seconds (1 minute)."
         }
       }
     }
