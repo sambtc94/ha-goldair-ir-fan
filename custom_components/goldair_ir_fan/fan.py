@@ -131,11 +131,12 @@ class GoldairIRFanEntity(FanEntity):
             if elapsed < self._runtime_state.ir_command_delay_seconds:
                 await asyncio.sleep(self._runtime_state.ir_command_delay_seconds - elapsed)
 
+        command_payload = command if command.startswith("b64:") else f"b64:{command}"
         await self.hass.services.async_call(
             REMOTE_DOMAIN,
             SERVICE_SEND_COMMAND,
             {
-                "command": [command],
+                "command": [command_payload],
             },
             target={"entity_id": self._remote_entity_id},
             blocking=True,

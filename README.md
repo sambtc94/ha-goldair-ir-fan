@@ -4,7 +4,7 @@ Home Assistant integration for the Goldair IR fan.
 
 ## Setup
 
-Add the integration and select your infrared emitter (`infrared` entity) during setup.
+Add the integration and select your remote emitter (`remote` entity) during setup.
 
 ## Functionality
 
@@ -16,7 +16,7 @@ Add the integration and select your infrared emitter (`infrared` entity) during 
 - 3-mode cycling (`mode`: normal, breeze, night)
 - Adjustable IR command delay entity (default 500ms)
 - Override entities for optimistic state resync: power, speed, oscillation, and preset
-- Uses Home Assistant's current infrared entity platform helpers (`homeassistant.components.infrared`)
+- Uses `remote.send_command` with Broadlink-compatible raw IR payloads (`b64:` prefixed)
 
 ## Not yet implemented
 
