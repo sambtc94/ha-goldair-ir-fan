@@ -126,16 +126,20 @@ class GoldairIRFanEntity(FanEntity):
 
     async def _send_ir_command(self, command: str) -> None:
         """Send a single IR command through the configured remote entity."""
+        if not isinstance(command, str):
+            raise TypeError("IR command must be a string")
+
         if self._last_ir_command_at is not None:
             elapsed = monotonic() - self._last_ir_command_at
             if elapsed < self._runtime_state.ir_command_delay_seconds:
                 await asyncio.sleep(self._runtime_state.ir_command_delay_seconds - elapsed)
 
+        command_payload = command if command.startswith("b64:") else f"b64:{command}"
         await self.hass.services.async_call(
             REMOTE_DOMAIN,
             SERVICE_SEND_COMMAND,
             {
-                "command": [command],
+                "command": [command_payload],
             },
             target={"entity_id": self._remote_entity_id},
             blocking=True,
