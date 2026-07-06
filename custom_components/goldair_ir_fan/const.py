@@ -14,8 +14,14 @@ DEFAULT_NAME = "Goldair IR Fan"
 # Supported user-facing preset mode labels.
 PRESET_MODES = ["normal", "breeze", "night"]
 
+# Discrete speed percentages supported by the Goldair fan.
+FAN_SPEEDS = [33, 67, 100]
+
 # Delay required between consecutive IR commands sent to the emitter.
 IR_COMMAND_DELAY_SECONDS = 0.5
+IR_COMMAND_DELAY_MIN_SECONDS = 0.0
+IR_COMMAND_DELAY_MAX_SECONDS = 5.0
+IR_COMMAND_DELAY_STEP_SECONDS = 0.1
 
 # The Goldair remote uses a 38 kHz IR carrier with NEC protocol commands.
 NEC_MODULATION = 38_000
@@ -41,3 +47,8 @@ IR_COMMAND_MODE_CYCLE = NECCommand(
     command=0x609F,
     modulation=NEC_MODULATION,
 )
+
+
+def state_update_signal(entry_id: str) -> str:
+    """Return dispatcher signal used for runtime state updates."""
+    return f"{DOMAIN}_{entry_id}_state_update"

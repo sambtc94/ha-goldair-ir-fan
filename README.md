@@ -14,7 +14,8 @@ Add the integration and select your infrared emitter (`infrared` entity) during 
 - 3-speed cycling (`speed` control)
 - Oscillation toggle (`osc` control)
 - 3-mode cycling (`mode`: normal, breeze, night)
-- 500ms spacing between consecutive IR commands
+- Adjustable IR command delay entity (default 500ms)
+- Override entities for optimistic state resync: power, speed, oscillation, and preset
 - Uses Home Assistant's current infrared entity platform helpers (`homeassistant.components.infrared`)
 
 ## Not yet implemented

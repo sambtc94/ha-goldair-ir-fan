@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from time import monotonic
 
 from infrared_protocols.commands import Command as InfraredCommand
@@ -11,21 +12,25 @@ from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.components.infrared import InfraredEmitterConsumerEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_IR_EMITTER,
     DEFAULT_NAME,
+    DOMAIN,
+    FAN_SPEEDS,
     IR_COMMAND_MODE_CYCLE,
-    IR_COMMAND_DELAY_SECONDS,
     IR_COMMAND_OSC_TOGGLE,
     IR_COMMAND_POWER_TOGGLE,
     IR_COMMAND_SPEED_CYCLE,
     PRESET_MODES,
+    state_update_signal,
 )
+from .state import GoldairIRFanRuntimeState
 
-# Three discrete physical speed states exposed by the remote cycle button.
-SPEEDS = [33, 67, 100]
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -38,7 +43,8 @@ async def async_setup_entry(
     if ir_emitter is None:
         return
 
-    async_add_entities([GoldairIRFanEntity(ir_emitter)])
+    runtime_state: GoldairIRFanRuntimeState = hass.data[DOMAIN][entry.entry_id]["runtime_state"]
+    async_add_entities([GoldairIRFanEntity(entry.entry_id, ir_emitter, runtime_state)])
 
 
 class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
@@ -57,27 +63,64 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
     _attr_speed_count = 3
     _attr_preset_modes = PRESET_MODES
 
-    def __init__(self, ir_emitter: str) -> None:
+    def __init__(
+        self,
+        entry_id: str,
+        ir_emitter: str,
+        runtime_state: GoldairIRFanRuntimeState,
+    ) -> None:
         """Initialize the fan entity."""
+        self._entry_id = entry_id
+        self._runtime_state = runtime_state
+        self._state_update_signal = state_update_signal(entry_id)
+
         # InfraredEmitterConsumerEntity uses this field to track availability.
         self._infrared_emitter_entity_id = ir_emitter
 
         # Stable unique ID derived from selected emitter.
         self._attr_unique_id = f"{ir_emitter}_goldair_ir_fan"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            name=DEFAULT_NAME,
+            manufacturer="Goldair",
+            model="IR Fan",
+        )
 
-        # Optimistic default state because IR fans do not provide state feedback.
-        self._attr_is_on = False
-        self._attr_percentage = 0
-        self._attr_oscillating = False
-        self._attr_preset_mode = None
+        self._sync_attrs_from_runtime_state()
         self._last_ir_command_at: float | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Register runtime-state listener."""
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                self._state_update_signal,
+                self._handle_runtime_state_update,
+            )
+        )
+
+    def _sync_attrs_from_runtime_state(self) -> None:
+        """Sync entity attributes from shared runtime state."""
+        self._attr_is_on = self._runtime_state.is_on
+        self._attr_percentage = self._runtime_state.percentage
+        self._attr_oscillating = self._runtime_state.oscillating
+        self._attr_preset_mode = self._runtime_state.preset_mode
+
+    def _handle_runtime_state_update(self) -> None:
+        """Handle shared runtime state updates."""
+        self._sync_attrs_from_runtime_state()
+        self.async_write_ha_state()
+
+    def _publish_runtime_state(self) -> None:
+        """Notify all entities that runtime state has changed."""
+        async_dispatcher_send(self.hass, self._state_update_signal)
 
     async def _send_ir_command(self, command: InfraredCommand) -> None:
         """Send a single IR command through the configured emitter."""
         if self._last_ir_command_at is not None:
             elapsed = monotonic() - self._last_ir_command_at
-            if elapsed < IR_COMMAND_DELAY_SECONDS:
-                await asyncio.sleep(IR_COMMAND_DELAY_SECONDS - elapsed)
+            if elapsed < self._runtime_state.ir_command_delay_seconds:
+                await asyncio.sleep(self._runtime_state.ir_command_delay_seconds - elapsed)
 
         await self._send_command(command)
         self._last_ir_command_at = monotonic()
@@ -89,11 +132,12 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
 
         # Goldair power is a toggle; turning on always lands at lowest speed.
         await self._send_ir_command(IR_COMMAND_POWER_TOGGLE)
-        self._attr_is_on = True
-        self._attr_percentage = SPEEDS[0]
-
-        # Assumed default mode after power on for optimistic state tracking.
-        self._attr_preset_mode = PRESET_MODES[0]
+        self._runtime_state.is_on = True
+        self._runtime_state.percentage = FAN_SPEEDS[0]
+        self._runtime_state.oscillating = False
+        self._runtime_state.preset_mode = PRESET_MODES[0]
+        self._sync_attrs_from_runtime_state()
+        self._publish_runtime_state()
 
     async def async_turn_on(
         self,
@@ -110,6 +154,7 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
         elif percentage is not None and percentage > 0:
             await self.async_set_percentage(percentage)
 
+        self._sync_attrs_from_runtime_state()
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs) -> None:
@@ -118,12 +163,12 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
             return
 
         await self._send_ir_command(IR_COMMAND_POWER_TOGGLE)
-        self._attr_is_on = False
-        self._attr_percentage = 0
-
-        # Off state clears active preset in line with fan entity guidance.
-        self._attr_preset_mode = None
-        self.async_write_ha_state()
+        self._runtime_state.is_on = False
+        self._runtime_state.percentage = 0
+        self._runtime_state.oscillating = False
+        self._runtime_state.preset_mode = None
+        self._sync_attrs_from_runtime_state()
+        self._publish_runtime_state()
 
     async def async_set_percentage(self, percentage: int) -> None:
         """Set fan speed by cycling until the nearest discrete speed is reached."""
@@ -134,22 +179,31 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
         await self._async_power_on_if_needed()
 
         # Manual speed changes must clear preset mode per fan entity docs.
-        self._attr_preset_mode = None
+        self._runtime_state.preset_mode = None
 
         # If state drift happened, start from low-speed index as safe fallback.
-        current_index = SPEEDS.index(self.percentage) if self.percentage in SPEEDS else 0
+        if self.percentage not in FAN_SPEEDS:
+            _LOGGER.warning(
+                "Fan speed state drift detected (%s); defaulting cycle base to %s",
+                self.percentage,
+                FAN_SPEEDS[0],
+            )
+            current_index = 0
+        else:
+            current_index = FAN_SPEEDS.index(self.percentage)
 
         # Convert requested percentage to nearest discrete Goldair speed bucket.
-        target_speed = min(SPEEDS, key=lambda speed: abs(speed - percentage))
-        target_index = SPEEDS.index(target_speed)
+        target_speed = min(FAN_SPEEDS, key=lambda speed: abs(speed - percentage))
+        target_index = FAN_SPEEDS.index(target_speed)
 
         # Remote only supports forward cycling (low -> mid -> high -> low).
-        steps = (target_index - current_index) % len(SPEEDS)
+        steps = (target_index - current_index) % len(FAN_SPEEDS)
         for _ in range(steps):
             await self._send_ir_command(IR_COMMAND_SPEED_CYCLE)
 
-        self._attr_percentage = target_speed
-        self.async_write_ha_state()
+        self._runtime_state.percentage = target_speed
+        self._sync_attrs_from_runtime_state()
+        self._publish_runtime_state()
 
     async def async_oscillate(self, oscillating: bool) -> None:
         """Toggle fan oscillation to match the requested boolean state."""
@@ -158,8 +212,9 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
 
         await self._async_power_on_if_needed()
         await self._send_ir_command(IR_COMMAND_OSC_TOGGLE)
-        self._attr_oscillating = oscillating
-        self.async_write_ha_state()
+        self._runtime_state.oscillating = oscillating
+        self._sync_attrs_from_runtime_state()
+        self._publish_runtime_state()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set fan mode by cycling normal -> breeze -> night."""
@@ -169,7 +224,15 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
         await self._async_power_on_if_needed()
 
         # Resolve optimistic current mode; default to normal when unknown.
-        current_mode = self.preset_mode if self.preset_mode in PRESET_MODES else PRESET_MODES[0]
+        if self.preset_mode not in PRESET_MODES:
+            _LOGGER.warning(
+                "Fan preset state drift detected (%s); defaulting cycle base to %s",
+                self.preset_mode,
+                PRESET_MODES[0],
+            )
+            current_mode = PRESET_MODES[0]
+        else:
+            current_mode = self.preset_mode
         current_index = PRESET_MODES.index(current_mode)
         target_index = PRESET_MODES.index(preset_mode)
 
@@ -178,5 +241,6 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
         for _ in range(steps):
             await self._send_ir_command(IR_COMMAND_MODE_CYCLE)
 
-        self._attr_preset_mode = preset_mode
-        self.async_write_ha_state()
+        self._runtime_state.preset_mode = preset_mode
+        self._sync_attrs_from_runtime_state()
+        self._publish_runtime_state()
