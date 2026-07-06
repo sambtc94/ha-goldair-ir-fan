@@ -39,6 +39,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Goldair IR Fan entity from a config entry."""
+    # Fallback keeps existing entries created with the old `ir_emitter` key working.
     remote_entity = entry.data.get(CONF_REMOTE_ENTITY) or entry.data.get(CONF_IR_EMITTER)
     if remote_entity is None:
         return
