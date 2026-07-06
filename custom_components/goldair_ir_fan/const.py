@@ -25,7 +25,7 @@ IR_COMMAND_DELAY_MAX_SECONDS = 5.0
 IR_COMMAND_DELAY_STEP_SECONDS = 0.1
 
 # Hardcoded Broadlink raw IR blobs (base64) captured from a Goldair fan remote.
-# If your fan model differs, replace these with blobs learned from your remote.
+# If your model differs, replace these with blobs captured via `remote.learn_command`.
 IR_BLOB_POWER_TOGGLE = (
     "JgDCACkNKQ0OKSgOKQ0OKA8oDSkOKQ0oDikp6SkNKQ4NKSkNKQ0PKA4oDSoNKA4oDygo6ikNKQ4NKSkNKg0OKA0pDikNKA4pDigp6SkOKA4NKSkNKQ4OKA0qDSgOKA8oDCop6SkOKA4OKCkNKA8NKQ4pDSgOKQ4oDSkp6SkOKQ0NKSoNKA4NKg0oDigPKA0pDSoo6igOKQ0OKCkOKA4OKQ0oDikOKA0pDiko6igNKg0OKCkOKA4OKA4oDygNKQ0pDigpAA0F"
 )

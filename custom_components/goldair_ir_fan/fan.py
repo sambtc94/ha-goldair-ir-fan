@@ -143,11 +143,6 @@ class GoldairIRFanEntity(FanEntity):
                 blocking=True,
             )
         except HomeAssistantError as err:
-            _LOGGER.error(
-                "Failed to send IR command via remote entity %s: %s",
-                self._remote_entity_id,
-                err,
-            )
             raise HomeAssistantError(
                 f"Failed to send IR command via remote entity {self._remote_entity_id}: {err}"
             ) from err
