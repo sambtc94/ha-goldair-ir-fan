@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -12,6 +14,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DEFAULT_NAME, DOMAIN, FAN_SPEEDS, PRESET_MODES, state_update_signal
 from .state import GoldairIRFanRuntimeState
+
+_LOGGER = logging.getLogger(__name__)
 
 SPEED_OPTIONS = ["off", "low", "medium", "high"]
 SPEED_TO_PERCENTAGE = {
@@ -88,6 +92,10 @@ class GoldairIRPresetOverrideSelectEntity(SelectEntity):
             return
         self._runtime_state.preset_mode = option
         if self._runtime_state.is_on and self._runtime_state.percentage == 0:
+            _LOGGER.warning(
+                "Preset override state drift detected (on with 0%% speed); defaulting speed to %s",
+                FAN_SPEEDS[0],
+            )
             self._runtime_state.percentage = FAN_SPEEDS[0]
         async_dispatcher_send(self.hass, self._signal)
 
@@ -129,7 +137,13 @@ class GoldairIRSpeedOverrideSelectEntity(SelectEntity):
         """Return current speed override option."""
         if not self._runtime_state.is_on:
             return "off"
-        return PERCENTAGE_TO_SPEED.get(self._runtime_state.percentage, "low")
+        if self._runtime_state.percentage not in PERCENTAGE_TO_SPEED:
+            _LOGGER.warning(
+                "Speed override state drift detected (%s); defaulting option to low",
+                self._runtime_state.percentage,
+            )
+            return "low"
+        return PERCENTAGE_TO_SPEED[self._runtime_state.percentage]
 
     async def async_select_option(self, option: str) -> None:
         """Override speed state."""
