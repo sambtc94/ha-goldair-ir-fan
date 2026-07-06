@@ -130,7 +130,7 @@ class GoldairIROscillationOverrideSwitchEntity(SwitchEntity):
     _attr_has_entity_name = True
     _attr_name = "Oscillation override"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_icon = "mdi:rotate-3d-variant"
+    _attr_icon = "mdi:swap-horizontal"
 
     def __init__(
         self,
