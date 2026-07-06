@@ -1,7 +1,7 @@
 {
   "domain": "goldair_ir_fan",
   "name": "Goldair IR Fan",
-  "version": "16433b9",
+  "version": "0.1.0",
   "documentation": "https://github.com/sambtc94/ha-goldair-ir-fan",
   "issue_tracker": "https://github.com/sambtc94/ha-goldair-ir-fan/issues",
   "config_flow": true,
