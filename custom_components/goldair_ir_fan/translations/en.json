@@ -3,9 +3,28 @@
     "step": {
       "user": {
         "title": "Goldair IR Fan",
-        "description": "Choose the remote entity for your fan.",
+        "description": "Choose the remote entity that will transmit IR signals to your Goldair fan.",
         "data": {
-          "remote_entity": "Remote entity"
+          "remote_entity": "Remote entity",
+          "ir_command_delay": "IR command delay (seconds)"
+        },
+        "data_description": {
+          "remote_entity": "The Home Assistant remote entity connected to your IR blaster (e.g. a Broadlink device).",
+          "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Goldair IR Fan Options",
+        "description": "Adjust the integration settings.",
+        "data": {
+          "ir_command_delay": "IR command delay (seconds)"
+        },
+        "data_description": {
+          "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands."
         }
       }
     }
