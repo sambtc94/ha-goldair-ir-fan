@@ -79,7 +79,6 @@ class GoldairIRFanPowerSensor(SensorEntity):
     _attr_device_class = SensorDeviceClass.POWER
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:lightning-bolt"
 
     def __init__(
         self,
