@@ -77,9 +77,6 @@ POWER_THRESHOLD_MIN = 0.0              # watts
 POWER_THRESHOLD_MAX = 500.0            # watts
 POWER_THRESHOLD_STEP = 0.5            # step granularity for the UI slider
 
-# Rolling average window used by power-monitor automation.
-POWER_MONITOR_AVERAGE_WINDOW_SECONDS = 60.0
-
 # ---------------------------------------------------------------------------
 # Broadlink IR blobs
 # ---------------------------------------------------------------------------

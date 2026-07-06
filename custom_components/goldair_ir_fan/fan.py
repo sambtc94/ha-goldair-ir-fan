@@ -23,7 +23,6 @@ it via the override switch/select entities.
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 import logging
 from time import monotonic
 
@@ -47,7 +46,6 @@ from .const import (
     IR_BLOB_OSC_TOGGLE,
     IR_BLOB_POWER_TOGGLE,
     IR_BLOB_SPEED_CYCLE,
-    POWER_MONITOR_AVERAGE_WINDOW_SECONDS,
     PRESET_MODES,
     state_update_signal,
 )
@@ -130,9 +128,6 @@ class GoldairIRFanEntity(FanEntity):
         self._sync_attrs_from_runtime_state()
         # Track when the last IR command was sent so we can enforce the delay.
         self._last_ir_command_at: float | None = None
-        # Keep a rolling buffer of recent power samples for 60-second averaging.
-        self._timestamped_power_samples: deque[tuple[float, float]] = deque()
-        self._power_monitor_started_at: float | None = None
         # Guard against overlapping automatic on/off commands triggered by the
         # power sensor.  HA's event loop is single-threaded, but successive
         # sensor updates can arrive while a previous async_turn_on/off is still
@@ -196,32 +191,14 @@ class GoldairIRFanEntity(FanEntity):
         self._sync_attrs_from_runtime_state()
         self.schedule_update_ha_state()
 
-    def _add_power_sample(self, watts: float) -> None:
-        """Add a power reading and keep only the last 60 seconds of samples."""
-        now = monotonic()
-        if self._power_monitor_started_at is None:
-            self._power_monitor_started_at = now
-        self._timestamped_power_samples.append((now, watts))
-        cutoff = now - POWER_MONITOR_AVERAGE_WINDOW_SECONDS
-        while self._timestamped_power_samples and self._timestamped_power_samples[0][0] < cutoff:
-            self._timestamped_power_samples.popleft()
-
-    def _rolling_power_average(self) -> float | None:
-        """Return the average watts from the configured rolling sample window."""
-        if not self._timestamped_power_samples:
-            return None
-        return sum(watts for _, watts in self._timestamped_power_samples) / len(
-            self._timestamped_power_samples
-        )
-
     async def _handle_power_sensor_state_change(self, event: Event) -> None:
         """React to power-sensor state changes to keep the fan in sync.
 
-        If the 60-second rolling average rises above the configured threshold and the
+        Compares the current (instantaneous) wattage directly against the
+        configured threshold.  If the reading rises above the threshold and the
         integration believes the fan is off, the fan is turned on at low speed.
-
-        If the 60-second rolling average drops to or below the threshold and the
-        integration believes the fan is on, the fan is turned off.
+        If it drops to or below the threshold and the fan is believed to be on,
+        the fan is turned off.
 
         States that cannot be parsed as a number (unavailable, unknown, etc.)
         are silently ignored to avoid spurious commands.
@@ -240,28 +217,14 @@ class GoldairIRFanEntity(FanEntity):
             )
             return
 
-        self._add_power_sample(watts)
-        if (
-            self._power_monitor_started_at is not None
-            and monotonic() - self._power_monitor_started_at
-            < POWER_MONITOR_AVERAGE_WINDOW_SECONDS
-        ):
-            # Wait until one full averaging window has elapsed so startup spikes
-            # do not trigger an immediate on/off action from incomplete data.
-            return
-
-        average_watts = self._rolling_power_average()
-        if average_watts is None:
-            return
-
         threshold = self._runtime_state.power_threshold
 
-        if average_watts > threshold and not self._runtime_state.is_on:
+        if watts > threshold and not self._runtime_state.is_on:
             if self._auto_control_busy:
                 return
             _LOGGER.debug(
-                "Power average %.1f W over last minute (> %.1f W threshold); turning fan on",
-                average_watts,
+                "Power reading %.1f W (> %.1f W threshold); turning fan on",
+                watts,
                 threshold,
             )
             self._auto_control_busy = True
@@ -272,12 +235,12 @@ class GoldairIRFanEntity(FanEntity):
                 await self.async_turn_on(percentage=FAN_SPEEDS[0])
             finally:
                 self._auto_control_busy = False
-        elif average_watts <= threshold and self._runtime_state.is_on:
+        elif watts <= threshold and self._runtime_state.is_on:
             if self._auto_control_busy:
                 return
             _LOGGER.debug(
-                "Power average %.1f W over last minute (<= %.1f W threshold); turning fan off",
-                average_watts,
+                "Power reading %.1f W (<= %.1f W threshold); turning fan off",
+                watts,
                 threshold,
             )
             self._auto_control_busy = True

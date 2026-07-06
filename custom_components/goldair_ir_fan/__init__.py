@@ -26,7 +26,7 @@ from .const import (
 from .state import GoldairIRFanRuntimeState
 
 # All platform modules that this integration loads entity from.
-PLATFORMS: list[str] = ["fan", "switch", "select"]
+PLATFORMS: list[str] = ["fan", "sensor", "switch", "select"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
