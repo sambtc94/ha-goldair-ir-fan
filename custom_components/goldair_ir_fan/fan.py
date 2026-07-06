@@ -290,7 +290,7 @@ class GoldairIRFanEntity(FanEntity):
         Turning the fan on always lands at the lowest speed (33 %), no
         oscillation, normal mode – matching the physical remote behaviour.
         """
-        if self.is_on:
+        if self._runtime_state.is_on:
             return
 
         await self._send_ir_command(IR_BLOB_POWER_TOGGLE)
@@ -326,7 +326,7 @@ class GoldairIRFanEntity(FanEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn the fan off using the power-toggle IR command."""
-        if not self.is_on:
+        if not self._runtime_state.is_on:
             return  # already off; nothing to do
 
         await self._send_ir_command(IR_BLOB_POWER_TOGGLE)
