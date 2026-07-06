@@ -26,6 +26,15 @@ CONF_IR_COMMAND_DELAY = "ir_command_delay"
 # Kept here so existing entries continue to work after an upgrade.
 CONF_IR_EMITTER = "ir_emitter"
 
+# Key for an optional power-monitor sensor entity.  When set, the integration
+# watches this sensor and automatically turns the fan on/off based on whether
+# the reported wattage is above or below CONF_POWER_THRESHOLD.
+CONF_POWER_MONITOR_ENTITY = "power_monitor_entity"
+
+# Key for the watt threshold used together with CONF_POWER_MONITOR_ENTITY.
+# Readings above this value mean the fan is powered; below means it is off.
+CONF_POWER_THRESHOLD = "power_threshold"
+
 # ---------------------------------------------------------------------------
 # Display name
 # ---------------------------------------------------------------------------
@@ -56,6 +65,17 @@ IR_COMMAND_DELAY_SECONDS = 0.5
 IR_COMMAND_DELAY_MIN_SECONDS = 0.0   # 0 = no forced delay (use with caution)
 IR_COMMAND_DELAY_MAX_SECONDS = 5.0   # 5 s is a safe upper bound
 IR_COMMAND_DELAY_STEP_SECONDS = 0.1  # step granularity for the UI slider
+
+# ---------------------------------------------------------------------------
+# Power-monitor thresholds – these values define the valid range and UI step
+# for the "Power threshold" option in the integration's Configure form.
+# ---------------------------------------------------------------------------
+
+# Default wattage below which the fan is considered to be off.
+DEFAULT_POWER_THRESHOLD = 10.0          # watts
+POWER_THRESHOLD_MIN = 0.0              # watts (0 = disabled edge)
+POWER_THRESHOLD_MAX = 500.0            # watts
+POWER_THRESHOLD_STEP = 0.5            # step granularity for the UI slider
 
 # ---------------------------------------------------------------------------
 # Broadlink IR blobs

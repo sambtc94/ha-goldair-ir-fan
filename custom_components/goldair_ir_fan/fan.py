@@ -30,10 +30,11 @@ from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.components.remote import DOMAIN as REMOTE_DOMAIN, SERVICE_SEND_COMMAND
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, Event
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     CONF_IR_EMITTER,
@@ -155,6 +156,16 @@ class GoldairIRFanEntity(FanEntity):
             )
         )
 
+        # Subscribe to the power-monitor sensor if one is configured.
+        if self._runtime_state.power_monitor_entity:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass,
+                    [self._runtime_state.power_monitor_entity],
+                    self._handle_power_sensor_state_change,
+                )
+            )
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -174,6 +185,49 @@ class GoldairIRFanEntity(FanEntity):
         """Refresh HA state when the shared runtime state is updated by another entity."""
         self._sync_attrs_from_runtime_state()
         self.schedule_update_ha_state()
+
+    async def _handle_power_sensor_state_change(self, event: Event) -> None:
+        """React to power-sensor state changes to keep the fan in sync.
+
+        If the reported wattage rises above the configured threshold and the
+        integration believes the fan is off, the fan is turned on at low speed.
+
+        If the reported wattage drops to or below the threshold and the
+        integration believes the fan is on, the fan is turned off.
+
+        States that cannot be parsed as a number (unavailable, unknown, etc.)
+        are silently ignored to avoid spurious commands.
+        """
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state in {STATE_UNAVAILABLE, STATE_UNKNOWN}:
+            return
+
+        try:
+            watts = float(new_state.state)
+        except (ValueError, TypeError):
+            _LOGGER.debug(
+                "Power sensor %s reported non-numeric state '%s'; ignoring",
+                self._runtime_state.power_monitor_entity,
+                new_state.state,
+            )
+            return
+
+        threshold = self._runtime_state.power_threshold
+
+        if watts > threshold and not self._runtime_state.is_on:
+            _LOGGER.debug(
+                "Power sensor reads %.1f W (> %.1f W threshold); turning fan on",
+                watts,
+                threshold,
+            )
+            await self.async_turn_on()
+        elif watts <= threshold and self._runtime_state.is_on:
+            _LOGGER.debug(
+                "Power sensor reads %.1f W (<= %.1f W threshold); turning fan off",
+                watts,
+                threshold,
+            )
+            await self.async_turn_off()
 
     def _publish_runtime_state(self) -> None:
         """Broadcast a runtime-state-changed signal to all sibling entities."""

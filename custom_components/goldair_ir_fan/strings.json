@@ -6,11 +6,15 @@
         "description": "Choose the remote entity that will transmit IR signals to your Goldair fan.",
         "data": {
           "remote_entity": "Remote entity",
-          "ir_command_delay": "IR command delay (seconds)"
+          "ir_command_delay": "IR command delay (seconds)",
+          "power_monitor_entity": "Power monitor sensor (optional)",
+          "power_threshold": "Power threshold (watts)"
         },
         "data_description": {
           "remote_entity": "The Home Assistant remote entity connected to your IR blaster (e.g. a Broadlink device).",
-          "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands."
+          "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands.",
+          "power_monitor_entity": "A sensor that reports the fan's power draw in watts. When set, the integration will automatically turn the fan on or off based on the threshold below.",
+          "power_threshold": "If the power sensor reads above this value the fan is considered on; at or below it the fan is considered off. Default is 10 W."
         }
       }
     }
@@ -21,10 +25,14 @@
         "title": "Goldair IR Fan Options",
         "description": "Adjust the integration settings.",
         "data": {
-          "ir_command_delay": "IR command delay (seconds)"
+          "ir_command_delay": "IR command delay (seconds)",
+          "power_monitor_entity": "Power monitor sensor (optional)",
+          "power_threshold": "Power threshold (watts)"
         },
         "data_description": {
-          "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands."
+          "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands.",
+          "power_monitor_entity": "A sensor that reports the fan's power draw in watts. Leave blank to disable automatic on/off.",
+          "power_threshold": "If the power sensor reads above this value the fan is considered on; at or below it the fan is considered off. Default is 10 W."
         }
       }
     }

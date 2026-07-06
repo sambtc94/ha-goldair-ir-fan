@@ -15,7 +15,14 @@ write a single in-memory state without going through the entity registry.
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_IR_COMMAND_DELAY, DOMAIN, IR_COMMAND_DELAY_SECONDS
+from .const import (
+    CONF_IR_COMMAND_DELAY,
+    CONF_POWER_MONITOR_ENTITY,
+    CONF_POWER_THRESHOLD,
+    DEFAULT_POWER_THRESHOLD,
+    DOMAIN,
+    IR_COMMAND_DELAY_SECONDS,
+)
 from .state import GoldairIRFanRuntimeState
 
 # All platform modules that this integration loads entity from.
@@ -37,12 +44,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data.get(CONF_IR_COMMAND_DELAY, IR_COMMAND_DELAY_SECONDS),
     )
 
+    # Resolve power-monitor settings (optional; None if not configured).
+    power_monitor_entity = entry.options.get(
+        CONF_POWER_MONITOR_ENTITY,
+        entry.data.get(CONF_POWER_MONITOR_ENTITY),
+    ) or None  # treat empty string as "not set"
+
+    power_threshold = entry.options.get(
+        CONF_POWER_THRESHOLD,
+        entry.data.get(CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD),
+    )
+
     hass.data[DOMAIN][entry.entry_id] = {
-        "runtime_state": GoldairIRFanRuntimeState(ir_command_delay_seconds=ir_delay),
+        "runtime_state": GoldairIRFanRuntimeState(
+            ir_command_delay_seconds=ir_delay,
+            power_monitor_entity=power_monitor_entity,
+            power_threshold=power_threshold,
+        ),
     }
 
-    # Register the options-update listener so live delay changes take effect
-    # without requiring an HA restart or a config-entry reload.
+    # Register the options-update listener so changes from the "Configure"
+    # button take effect without requiring an HA restart.
     entry.async_on_unload(entry.add_update_listener(_async_update_options))
 
     # Load fan, switch and select platforms.
@@ -51,19 +73,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply updated options to the running integration without a full reload.
+    """Reload the integration when the user saves the options flow.
 
-    Home Assistant calls this whenever the user saves the options flow.
-    We push the new IR delay straight into the shared runtime-state so the
-    fan entity picks it up on the next command without needing a restart.
+    A full reload is the cleanest way to apply changed settings (especially a
+    new power-monitor entity, which requires re-subscribing to state changes).
     """
-    runtime_state: GoldairIRFanRuntimeState = hass.data[DOMAIN][entry.entry_id]["runtime_state"]
-
-    new_delay = entry.options.get(
-        CONF_IR_COMMAND_DELAY,
-        entry.data.get(CONF_IR_COMMAND_DELAY, IR_COMMAND_DELAY_SECONDS),
-    )
-    runtime_state.ir_command_delay_seconds = new_delay
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
