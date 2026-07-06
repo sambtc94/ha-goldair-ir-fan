@@ -94,6 +94,7 @@ class GoldairIRFanEntity(FanEntity):
         | FanEntityFeature.OSCILLATE
         | FanEntityFeature.PRESET_MODE
     )
+    _attr_icon = "mdi:fan"
     # Three discrete speed steps – HA maps a 0-100 % slider to these buckets.
     _attr_speed_count = 3
     _attr_preset_modes = PRESET_MODES
