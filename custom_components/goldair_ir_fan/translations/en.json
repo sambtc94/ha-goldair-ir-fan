@@ -3,9 +3,9 @@
     "step": {
       "user": {
         "title": "Goldair IR Fan",
-        "description": "Choose the infrared emitter entity for your fan.",
+        "description": "Choose the remote entity for your fan.",
         "data": {
-          "ir_emitter": "Infrared emitter"
+          "remote_entity": "Remote entity"
         }
       }
     }

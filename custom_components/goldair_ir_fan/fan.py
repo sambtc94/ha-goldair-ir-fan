@@ -6,11 +6,10 @@ import asyncio
 import logging
 from time import monotonic
 
-from infrared_protocols.commands import Command as InfraredCommand
-
 from homeassistant.components.fan import FanEntity, FanEntityFeature
-from homeassistant.components.infrared import InfraredEmitterConsumerEntity
+from homeassistant.components.remote import DOMAIN as REMOTE_DOMAIN, SERVICE_SEND_COMMAND
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -18,13 +17,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_IR_EMITTER,
+    CONF_REMOTE_ENTITY,
     DEFAULT_NAME,
     DOMAIN,
     FAN_SPEEDS,
-    IR_COMMAND_MODE_CYCLE,
-    IR_COMMAND_OSC_TOGGLE,
-    IR_COMMAND_POWER_TOGGLE,
-    IR_COMMAND_SPEED_CYCLE,
+    IR_BLOB_MODE_CYCLE,
+    IR_BLOB_OSC_TOGGLE,
+    IR_BLOB_POWER_TOGGLE,
+    IR_BLOB_SPEED_CYCLE,
     PRESET_MODES,
     state_update_signal,
 )
@@ -39,16 +39,16 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Goldair IR Fan entity from a config entry."""
-    ir_emitter = entry.data.get(CONF_IR_EMITTER)
-    if ir_emitter is None:
+    remote_entity = entry.data.get(CONF_REMOTE_ENTITY) or entry.data.get(CONF_IR_EMITTER)
+    if remote_entity is None:
         return
 
     runtime_state: GoldairIRFanRuntimeState = hass.data[DOMAIN][entry.entry_id]["runtime_state"]
-    async_add_entities([GoldairIRFanEntity(entry.entry_id, ir_emitter, runtime_state)])
+    async_add_entities([GoldairIRFanEntity(entry.entry_id, remote_entity, runtime_state)])
 
 
-class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
-    """Representation of a Goldair IR fan controlled by an IR emitter entity."""
+class GoldairIRFanEntity(FanEntity):
+    """Representation of a Goldair IR fan controlled through a remote entity."""
 
     # Fan feature flags mapped to implemented async methods below.
     _attr_name = DEFAULT_NAME
@@ -66,7 +66,7 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
     def __init__(
         self,
         entry_id: str,
-        ir_emitter: str,
+        remote_entity: str,
         runtime_state: GoldairIRFanRuntimeState,
     ) -> None:
         """Initialize the fan entity."""
@@ -74,11 +74,10 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
         self._runtime_state = runtime_state
         self._state_update_signal = state_update_signal(entry_id)
 
-        # InfraredEmitterConsumerEntity uses this field to track availability.
-        self._infrared_emitter_entity_id = ir_emitter
+        self._remote_entity_id = remote_entity
 
-        # Stable unique ID derived from selected emitter.
-        self._attr_unique_id = f"{ir_emitter}_goldair_ir_fan"
+        # Stable unique ID derived from selected remote entity.
+        self._attr_unique_id = f"{remote_entity}_goldair_ir_fan"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             name=DEFAULT_NAME,
@@ -115,14 +114,22 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
         """Notify all entities that runtime state has changed."""
         async_dispatcher_send(self.hass, self._state_update_signal)
 
-    async def _send_ir_command(self, command: InfraredCommand) -> None:
-        """Send a single IR command through the configured emitter."""
+    async def _send_ir_command(self, command: str) -> None:
+        """Send a single IR command through the configured remote entity."""
         if self._last_ir_command_at is not None:
             elapsed = monotonic() - self._last_ir_command_at
             if elapsed < self._runtime_state.ir_command_delay_seconds:
                 await asyncio.sleep(self._runtime_state.ir_command_delay_seconds - elapsed)
 
-        await self._send_command(command)
+        await self.hass.services.async_call(
+            REMOTE_DOMAIN,
+            SERVICE_SEND_COMMAND,
+            {
+                ATTR_ENTITY_ID: self._remote_entity_id,
+                "command": command,
+            },
+            blocking=True,
+        )
         self._last_ir_command_at = monotonic()
 
     async def _async_power_on_if_needed(self) -> None:
@@ -131,7 +138,7 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
             return
 
         # Goldair power is a toggle; turning on always lands at lowest speed.
-        await self._send_ir_command(IR_COMMAND_POWER_TOGGLE)
+        await self._send_ir_command(IR_BLOB_POWER_TOGGLE)
         self._runtime_state.is_on = True
         self._runtime_state.percentage = FAN_SPEEDS[0]
         self._runtime_state.oscillating = False
@@ -162,7 +169,7 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
         if not self.is_on:
             return
 
-        await self._send_ir_command(IR_COMMAND_POWER_TOGGLE)
+        await self._send_ir_command(IR_BLOB_POWER_TOGGLE)
         self._runtime_state.is_on = False
         self._runtime_state.percentage = 0
         self._runtime_state.oscillating = False
@@ -199,7 +206,7 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
         # Remote only supports forward cycling (low -> mid -> high -> low).
         steps = (target_index - current_index) % len(FAN_SPEEDS)
         for _ in range(steps):
-            await self._send_ir_command(IR_COMMAND_SPEED_CYCLE)
+            await self._send_ir_command(IR_BLOB_SPEED_CYCLE)
 
         self._runtime_state.percentage = target_speed
         self._sync_attrs_from_runtime_state()
@@ -211,7 +218,7 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
             return
 
         await self._async_power_on_if_needed()
-        await self._send_ir_command(IR_COMMAND_OSC_TOGGLE)
+        await self._send_ir_command(IR_BLOB_OSC_TOGGLE)
         self._runtime_state.oscillating = oscillating
         self._sync_attrs_from_runtime_state()
         self._publish_runtime_state()
@@ -239,7 +246,7 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
         # Mode key also cycles forward through all modes.
         steps = (target_index - current_index) % len(PRESET_MODES)
         for _ in range(steps):
-            await self._send_ir_command(IR_COMMAND_MODE_CYCLE)
+            await self._send_ir_command(IR_BLOB_MODE_CYCLE)
 
         self._runtime_state.preset_mode = preset_mode
         self._sync_attrs_from_runtime_state()
