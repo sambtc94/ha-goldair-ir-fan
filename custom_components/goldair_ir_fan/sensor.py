@@ -8,8 +8,8 @@ in the integration options.  It mirrors the latest watts value from the external
 sensor and gives it a proper Home Assistant device class (``SensorDeviceClass.POWER``)
 so that HA can show it with the right unit and graph it in the Energy dashboard.
 
-The power reading shown here is the same value used by the fan entity to decide
-whether to auto-turn the fan on or off based on the configured threshold.
+The power reading shown here is the same value used by the fan entity to update
+power-override state based on the configured threshold.
 """
 
 from __future__ import annotations
@@ -65,8 +65,8 @@ async def async_setup_entry(
 class GoldairIRFanPowerSensor(SensorEntity):
     """Sensor that reports the current power reading watched by the integration.
 
-    This sensor tracks the same power value that the fan entity uses when deciding
-    whether to auto-turn on or off.  Displaying it here lets users easily confirm
+    This sensor tracks the same power value that the fan entity uses when updating
+    optimistic power-override state.  Displaying it here lets users easily confirm
     the integration is receiving power data and compare it against the configured
     threshold without digging through the logs.
 

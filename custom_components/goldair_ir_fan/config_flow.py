@@ -22,16 +22,21 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_IR_COMMAND_DELAY,
+    CONF_POWER_LAG_SECONDS,
     CONF_POWER_MONITOR_ENTITY,
     CONF_POWER_THRESHOLD,
     CONF_REMOTE_ENTITY,
     DEFAULT_NAME,
+    DEFAULT_POWER_LAG_SECONDS,
     DEFAULT_POWER_THRESHOLD,
     DOMAIN,
     IR_COMMAND_DELAY_MAX_SECONDS,
     IR_COMMAND_DELAY_MIN_SECONDS,
     IR_COMMAND_DELAY_SECONDS,
     IR_COMMAND_DELAY_STEP_SECONDS,
+    POWER_LAG_MAX_SECONDS,
+    POWER_LAG_MIN_SECONDS,
+    POWER_LAG_STEP_SECONDS,
     POWER_THRESHOLD_MAX,
     POWER_THRESHOLD_MIN,
     POWER_THRESHOLD_STEP,
@@ -74,6 +79,9 @@ class GoldairIRFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_POWER_THRESHOLD: user_input.get(
                         CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD
                     ),
+                    CONF_POWER_LAG_SECONDS: user_input.get(
+                        CONF_POWER_LAG_SECONDS, DEFAULT_POWER_LAG_SECONDS
+                    ),
                 },
             )
 
@@ -109,6 +117,18 @@ class GoldairIRFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         step=POWER_THRESHOLD_STEP,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional(
+                    CONF_POWER_LAG_SECONDS,
+                    default=DEFAULT_POWER_LAG_SECONDS,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=POWER_LAG_MIN_SECONDS,
+                        max=POWER_LAG_MAX_SECONDS,
+                        step=POWER_LAG_STEP_SECONDS,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="s",
                     )
                 ),
             }
@@ -148,6 +168,9 @@ class GoldairIRFanOptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_POWER_THRESHOLD: user_input.get(
                         CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD
                     ),
+                    CONF_POWER_LAG_SECONDS: user_input.get(
+                        CONF_POWER_LAG_SECONDS, DEFAULT_POWER_LAG_SECONDS
+                    ),
                 },
             )
 
@@ -165,6 +188,10 @@ class GoldairIRFanOptionsFlowHandler(config_entries.OptionsFlow):
         current_threshold = self._config_entry.options.get(
             CONF_POWER_THRESHOLD,
             self._config_entry.data.get(CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD),
+        )
+        current_power_lag_seconds = self._config_entry.options.get(
+            CONF_POWER_LAG_SECONDS,
+            self._config_entry.data.get(CONF_POWER_LAG_SECONDS, DEFAULT_POWER_LAG_SECONDS),
         )
 
         schema_fields: dict = {
@@ -193,6 +220,18 @@ class GoldairIRFanOptionsFlowHandler(config_entries.OptionsFlow):
                     step=POWER_THRESHOLD_STEP,
                     mode=selector.NumberSelectorMode.BOX,
                     unit_of_measurement="W",
+                )
+            ),
+            vol.Optional(
+                CONF_POWER_LAG_SECONDS,
+                default=current_power_lag_seconds,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=POWER_LAG_MIN_SECONDS,
+                    max=POWER_LAG_MAX_SECONDS,
+                    step=POWER_LAG_STEP_SECONDS,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="s",
                 )
             ),
         }

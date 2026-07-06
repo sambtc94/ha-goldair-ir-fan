@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from time import monotonic
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
@@ -128,11 +129,14 @@ class GoldairIRFanEntity(FanEntity):
         self._sync_attrs_from_runtime_state()
         # Track when the last IR command was sent so we can enforce the delay.
         self._last_ir_command_at: float | None = None
-        # Guard against overlapping automatic on/off commands triggered by the
+        # Guard against overlapping automatic override updates triggered by the
         # power sensor.  HA's event loop is single-threaded, but successive
-        # sensor updates can arrive while a previous async_turn_on/off is still
-        # executing (awaiting IR blasts).  This flag prevents re-entrant calls.
+        # sensor updates can arrive while a previous callback is still running.
+        # This flag prevents re-entrant state writes.
         self._auto_control_busy: bool = False
+        # Rolling power samples (monotonic_ts, watts) used for lag-window
+        # averaging before threshold decisions.
+        self._power_samples: deque[tuple[float, float]] = deque()
 
     # ------------------------------------------------------------------
     # HA lifecycle hooks
@@ -192,16 +196,20 @@ class GoldairIRFanEntity(FanEntity):
         self.schedule_update_ha_state()
 
     async def _handle_power_sensor_state_change(self, event: Event) -> None:
-        """React to power-sensor state changes to keep the fan in sync.
+        """React to power-sensor state changes by updating power override state.
 
-        Compares the current (instantaneous) wattage directly against the
-        configured threshold.  If the reading rises above the threshold and the
-        integration believes the fan is off, the fan is turned on at low speed.
+        Readings are averaged across the configured lag window before comparing
+        against the threshold.  This avoids immediate toggles from short-lived
+        spikes and sensor lag.
+
+        If the averaged reading rises above the threshold and the integration
+        believes the fan is off, the optimistic runtime state is overridden to
+        "on" (low speed, no oscillation, normal mode).
         If it drops to or below the threshold and the fan is believed to be on,
-        the fan is turned off.
+        the optimistic runtime state is overridden to "off".
 
         States that cannot be parsed as a number (unavailable, unknown, etc.)
-        are silently ignored to avoid spurious commands.
+        are silently ignored.
         """
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state in {STATE_UNAVAILABLE, STATE_UNKNOWN}:
@@ -217,37 +225,87 @@ class GoldairIRFanEntity(FanEntity):
             )
             return
 
+        now = monotonic()
+        lag_seconds = max(0.0, self._runtime_state.power_lag_seconds)
+
+        self._power_samples.append((now, watts))
+        self._prune_power_samples(now, lag_seconds)
+
+        if lag_seconds > 0.0:
+            oldest_sample_age = now - self._power_samples[0][0]
+            if oldest_sample_age < lag_seconds:
+                _LOGGER.debug(
+                    "Power lag window still filling (%.1f/%.1f s); deferring override update",
+                    oldest_sample_age,
+                    lag_seconds,
+                )
+                return
+
+        averaged_watts = self._average_power_samples()
         threshold = self._runtime_state.power_threshold
 
-        if watts > threshold and not self._runtime_state.is_on:
+        if averaged_watts > threshold and not self._runtime_state.is_on:
             if self._auto_control_busy:
                 return
             _LOGGER.debug(
-                "Power reading %.1f W (> %.1f W threshold); turning fan on",
-                watts,
+                "Averaged power %.1f W (> %.1f W threshold); setting power override on",
+                averaged_watts,
                 threshold,
             )
             self._auto_control_busy = True
             try:
-                # FAN_SPEEDS[0] is the lowest speed step ("low"). Keep
-                # this explicit so auto-on behavior remains deterministic even
-                # if async_turn_on defaults ever change.
-                await self.async_turn_on(percentage=FAN_SPEEDS[0])
+                self._set_power_override_state(True)
             finally:
                 self._auto_control_busy = False
-        elif watts <= threshold and self._runtime_state.is_on:
+        elif averaged_watts <= threshold and self._runtime_state.is_on:
             if self._auto_control_busy:
                 return
             _LOGGER.debug(
-                "Power reading %.1f W (<= %.1f W threshold); turning fan off",
-                watts,
+                "Averaged power %.1f W (<= %.1f W threshold); setting power override off",
+                averaged_watts,
                 threshold,
             )
             self._auto_control_busy = True
             try:
-                await self.async_turn_off()
+                self._set_power_override_state(False)
             finally:
                 self._auto_control_busy = False
+
+    def _prune_power_samples(self, now: float, lag_seconds: float) -> None:
+        """Drop power samples that are older than the lag window."""
+        if lag_seconds <= 0.0:
+            # Keep only the latest sample when averaging is disabled.
+            while len(self._power_samples) > 1:
+                self._power_samples.popleft()
+            return
+
+        cutoff = now - lag_seconds
+        while self._power_samples and self._power_samples[0][0] < cutoff:
+            self._power_samples.popleft()
+
+    def _average_power_samples(self) -> float:
+        """Return the arithmetic mean of currently retained power samples."""
+        total = sum(sample_watts for _, sample_watts in self._power_samples)
+        return total / len(self._power_samples)
+
+    def _set_power_override_state(self, is_on: bool) -> None:
+        """Apply the same optimistic state change as the power-override switch.
+
+        This only updates integration state and does not send any IR command.
+        """
+        if is_on:
+            self._runtime_state.is_on = True
+            self._runtime_state.percentage = FAN_SPEEDS[0]
+            self._runtime_state.oscillating = False
+            self._runtime_state.preset_mode = PRESET_MODES[0]
+        else:
+            self._runtime_state.is_on = False
+            self._runtime_state.percentage = 0
+            self._runtime_state.oscillating = False
+            self._runtime_state.preset_mode = None
+
+        self._sync_attrs_from_runtime_state()
+        self._publish_runtime_state()
 
     def _publish_runtime_state(self) -> None:
         """Broadcast a runtime-state-changed signal to all sibling entities."""

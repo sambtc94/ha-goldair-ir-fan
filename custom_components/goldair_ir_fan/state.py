@@ -13,7 +13,11 @@ so that sibling entities can refresh their HA state.
 
 from __future__ import annotations
 
-from .const import DEFAULT_POWER_THRESHOLD, IR_COMMAND_DELAY_SECONDS
+from .const import (
+    DEFAULT_POWER_LAG_SECONDS,
+    DEFAULT_POWER_THRESHOLD,
+    IR_COMMAND_DELAY_SECONDS,
+)
 
 
 class GoldairIRFanRuntimeState:
@@ -34,12 +38,15 @@ class GoldairIRFanRuntimeState:
         entry options so that it survives HA restarts.
     power_monitor_entity
         Optional sensor entity ID (e.g. ``sensor.fan_power``) whose state (in
-        watts) is watched to automatically turn the fan on or off.  ``None``
+        watts) is watched to update optimistic power-override state.  ``None``
         means no power-monitor integration.
     power_threshold
         Wattage threshold used together with ``power_monitor_entity``.  Readings
-        strictly above this value are treated as "fan is powered on"; readings
-        at or below it are treated as "fan is off".
+        strictly above this value set override power state to on; readings at
+        or below it set override power state to off.
+    power_lag_seconds
+        Lag window (seconds) used to average power readings before applying
+        threshold decisions.  A value of ``0`` disables averaging.
     """
 
     def __init__(
@@ -47,6 +54,7 @@ class GoldairIRFanRuntimeState:
         ir_command_delay_seconds: float = IR_COMMAND_DELAY_SECONDS,
         power_monitor_entity: str | None = None,
         power_threshold: float = DEFAULT_POWER_THRESHOLD,
+        power_lag_seconds: float = DEFAULT_POWER_LAG_SECONDS,
     ) -> None:
         """Initialize state with the configured IR delay and optional power monitor."""
         self.is_on: bool = False
@@ -58,3 +66,4 @@ class GoldairIRFanRuntimeState:
         # Power-monitor settings (populated from config entry options/data).
         self.power_monitor_entity: str | None = power_monitor_entity
         self.power_threshold: float = power_threshold
+        self.power_lag_seconds: float = power_lag_seconds

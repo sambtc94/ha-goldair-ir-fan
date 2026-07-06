@@ -27,13 +27,16 @@ CONF_IR_COMMAND_DELAY = "ir_command_delay"
 CONF_IR_EMITTER = "ir_emitter"
 
 # Key for an optional power-monitor sensor entity.  When set, the integration
-# watches this sensor and automatically turns the fan on/off based on whether
-# the reported wattage is above or below CONF_POWER_THRESHOLD.
+# watches this sensor and updates the optimistic power-override state based on
+# whether the reported wattage is above or below CONF_POWER_THRESHOLD.
 CONF_POWER_MONITOR_ENTITY = "power_monitor_entity"
 
 # Key for the watt threshold used together with CONF_POWER_MONITOR_ENTITY.
-# Readings above this value mean the fan is powered; below means it is off.
+# Readings above this value set override power state to on; at/below sets off.
 CONF_POWER_THRESHOLD = "power_threshold"
+
+# Key for the averaging lag window (seconds) used for power-monitor decisions.
+CONF_POWER_LAG_SECONDS = "power_lag_seconds"
 
 # ---------------------------------------------------------------------------
 # Display name
@@ -76,6 +79,13 @@ DEFAULT_POWER_THRESHOLD = 10.0          # watts
 POWER_THRESHOLD_MIN = 0.0              # watts
 POWER_THRESHOLD_MAX = 500.0            # watts
 POWER_THRESHOLD_STEP = 0.5            # step granularity for the UI slider
+
+# Default averaging window for power decisions. Readings are averaged over this
+# window before toggling optimistic power override.
+DEFAULT_POWER_LAG_SECONDS = 300.0      # 5 minutes
+POWER_LAG_MIN_SECONDS = 0.0            # 0 = no averaging window
+POWER_LAG_MAX_SECONDS = 3600.0         # 1 hour upper bound
+POWER_LAG_STEP_SECONDS = 1.0           # step granularity for the UI slider
 
 # ---------------------------------------------------------------------------
 # Broadlink IR blobs

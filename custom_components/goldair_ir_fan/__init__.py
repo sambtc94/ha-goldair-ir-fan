@@ -17,8 +17,10 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_IR_COMMAND_DELAY,
+    CONF_POWER_LAG_SECONDS,
     CONF_POWER_MONITOR_ENTITY,
     CONF_POWER_THRESHOLD,
+    DEFAULT_POWER_LAG_SECONDS,
     DEFAULT_POWER_THRESHOLD,
     DOMAIN,
     IR_COMMAND_DELAY_SECONDS,
@@ -55,11 +57,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data.get(CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD),
     )
 
+    power_lag_seconds = entry.options.get(
+        CONF_POWER_LAG_SECONDS,
+        entry.data.get(CONF_POWER_LAG_SECONDS, DEFAULT_POWER_LAG_SECONDS),
+    )
+
     hass.data[DOMAIN][entry.entry_id] = {
         "runtime_state": GoldairIRFanRuntimeState(
             ir_command_delay_seconds=ir_delay,
             power_monitor_entity=power_monitor_entity,
             power_threshold=power_threshold,
+            power_lag_seconds=power_lag_seconds,
         ),
     }
 
