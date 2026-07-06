@@ -6,7 +6,10 @@
   "issue_tracker": "https://github.com/sambtc94/ha-goldair-ir-fan/issues",
   "config_flow": true,
   "iot_class": "local_push",
-  "homeassistant": "2024.3.0",
+  "dependencies": [
+    "infrared"
+  ],
+  "homeassistant": "2026.4.0",
   "codeowners": [
     "@sambtc94"
   ]
