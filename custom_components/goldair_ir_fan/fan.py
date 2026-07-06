@@ -47,6 +47,7 @@ from .const import (
     IR_BLOB_OSC_TOGGLE,
     IR_BLOB_POWER_TOGGLE,
     IR_BLOB_SPEED_CYCLE,
+    POWER_MONITOR_AVERAGE_WINDOW_SECONDS,
     PRESET_MODES,
     state_update_signal,
 )
@@ -201,7 +202,7 @@ class GoldairIRFanEntity(FanEntity):
         if self._power_monitor_started_at is None:
             self._power_monitor_started_at = now
         self._power_samples.append((now, watts))
-        cutoff = now - 60.0
+        cutoff = now - POWER_MONITOR_AVERAGE_WINDOW_SECONDS
         while self._power_samples and self._power_samples[0][0] < cutoff:
             self._power_samples.popleft()
 
@@ -240,7 +241,8 @@ class GoldairIRFanEntity(FanEntity):
         self._add_power_sample(watts)
         if (
             self._power_monitor_started_at is not None
-            and monotonic() - self._power_monitor_started_at < 60.0
+            and monotonic() - self._power_monitor_started_at
+            < POWER_MONITOR_AVERAGE_WINDOW_SECONDS
         ):
             return
 
@@ -260,7 +262,7 @@ class GoldairIRFanEntity(FanEntity):
             )
             self._auto_control_busy = True
             try:
-                # FAN_SPEEDS[0] is the lowest speed step (33% / "low"). Keep
+                # FAN_SPEEDS[0] is the lowest speed step ("low"). Keep
                 # this explicit so auto-on behavior remains deterministic even
                 # if async_turn_on defaults ever change.
                 await self.async_turn_on(percentage=FAN_SPEEDS[0])

@@ -69,7 +69,8 @@ class GoldairIRFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_IR_COMMAND_DELAY: user_input.get(
                         CONF_IR_COMMAND_DELAY, IR_COMMAND_DELAY_SECONDS
                     ),
-                    CONF_POWER_MONITOR_ENTITY: user_input.get(CONF_POWER_MONITOR_ENTITY),
+                    CONF_POWER_MONITOR_ENTITY: user_input.get(CONF_POWER_MONITOR_ENTITY)
+                    or None,
                     CONF_POWER_THRESHOLD: user_input.get(
                         CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD
                     ),
@@ -142,7 +143,8 @@ class GoldairIRFanOptionsFlowHandler(config_entries.OptionsFlow):
                 title="",
                 data={
                     CONF_IR_COMMAND_DELAY: user_input[CONF_IR_COMMAND_DELAY],
-                    CONF_POWER_MONITOR_ENTITY: user_input.get(CONF_POWER_MONITOR_ENTITY),
+                    CONF_POWER_MONITOR_ENTITY: user_input.get(CONF_POWER_MONITOR_ENTITY)
+                    or None,
                     CONF_POWER_THRESHOLD: user_input.get(
                         CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD
                     ),
