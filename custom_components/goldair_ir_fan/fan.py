@@ -56,6 +56,7 @@ class GoldairIRFanEntity(FanEntity):
     def __init__(self, ir_blaster: str) -> None:
         """Initialize the fan."""
         self._ir_blaster = ir_blaster
+        self._attr_unique_id = f"{ir_blaster}_goldair_ir_fan"
         self._attr_is_on = False
         self._attr_percentage = 0
         self._attr_oscillating = False
