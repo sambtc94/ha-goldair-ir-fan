@@ -1,4 +1,24 @@
-"""Fan platform for Goldair IR Fan."""
+"""Fan platform for Goldair IR Fan.
+
+This module registers a single :class:`GoldairIRFanEntity` that exposes the
+Goldair IR fan as a standard HA fan entity with speed, oscillation and preset-
+mode support.
+
+How it works
+------------
+The Goldair fan remote only has *toggle / cycle* buttons – there is no
+discrete "set speed 2" command.  Instead the integration tracks the *last
+known state* in a shared :class:`~.state.GoldairIRFanRuntimeState` object and
+sends the minimum number of cycle presses to reach the requested target.
+
+For example: if the fan is currently at low speed (33 %) and the user requests
+high speed (100 %), the integration sends two speed-cycle IR blasts to advance
+low → medium → high.
+
+Because there is no feedback channel (it is IR-only), the integration is
+*optimistic*: it trusts its own state record unless the user manually corrects
+it via the override switch/select entities.
+"""
 
 from __future__ import annotations
 
@@ -38,8 +58,13 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Goldair IR Fan entity from a config entry."""
-    # Fallback keeps existing entries created with the old `ir_emitter` key working.
+    """Set up the Goldair IR Fan entity from a config entry.
+
+    Called once by HA when the integration loads.  We retrieve the remote
+    entity ID and shared runtime state from the data bucket created in
+    ``__init__.async_setup_entry``, then hand a new entity to HA.
+    """
+    # Backwards-compat: old entries used the key CONF_IR_EMITTER.
     remote_entity = entry.data.get(CONF_REMOTE_ENTITY) or entry.data.get(CONF_IR_EMITTER)
     if remote_entity is None:
         return
@@ -49,9 +74,17 @@ async def async_setup_entry(
 
 
 class GoldairIRFanEntity(FanEntity):
-    """Representation of a Goldair IR fan controlled through a remote entity."""
+    """Representation of a Goldair IR fan controlled through a remote entity.
 
-    # Fan feature flags mapped to implemented async methods below.
+    Supported features
+    ------------------
+    TURN_ON / TURN_OFF  – power toggle via IR_BLOB_POWER_TOGGLE
+    SET_SPEED           – forward-cycle to the nearest of 33 / 67 / 100 %
+    OSCILLATE           – toggle swing on/off via IR_BLOB_OSC_TOGGLE
+    PRESET_MODE         – forward-cycle through normal / breeze / night modes
+    """
+
+    # HA reads these class attributes to know what the entity supports.
     _attr_name = DEFAULT_NAME
     _attr_has_entity_name = True
     _attr_supported_features = (
@@ -61,6 +94,7 @@ class GoldairIRFanEntity(FanEntity):
         | FanEntityFeature.OSCILLATE
         | FanEntityFeature.PRESET_MODE
     )
+    # Three discrete speed steps – HA maps a 0-100 % slider to these buckets.
     _attr_speed_count = 3
     _attr_preset_modes = PRESET_MODES
 
@@ -70,15 +104,18 @@ class GoldairIRFanEntity(FanEntity):
         remote_entity: str,
         runtime_state: GoldairIRFanRuntimeState,
     ) -> None:
-        """Initialize the fan entity."""
+        """Initialize the fan entity with its config-entry ID and remote entity."""
         self._entry_id = entry_id
         self._runtime_state = runtime_state
+        # The dispatcher signal key shared with sibling override entities.
         self._state_update_signal = state_update_signal(entry_id)
 
         self._remote_entity_id = remote_entity
 
-        # Stable unique ID derived from selected remote entity.
+        # Unique ID is derived from the remote entity so it survives HA restarts.
         self._attr_unique_id = f"{remote_entity}_goldair_ir_fan"
+        # DeviceInfo groups this entity (and the override entities) under a
+        # single device card in the HA device registry.
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             name=DEFAULT_NAME,
@@ -86,20 +123,30 @@ class GoldairIRFanEntity(FanEntity):
             model="IR Fan",
         )
 
+        # Populate HA entity attributes from the current runtime state.
         self._sync_attrs_from_runtime_state()
+        # Track when the last IR command was sent so we can enforce the delay.
         self._last_ir_command_at: float | None = None
+
+    # ------------------------------------------------------------------
+    # HA lifecycle hooks
+    # ------------------------------------------------------------------
 
     @property
     def available(self) -> bool:
-        """Return whether the configured remote entity is available."""
+        """Return True only when the configured remote entity is reachable.
+
+        If the Broadlink device goes offline the remote entity state becomes
+        ``unavailable``; we reflect that here so HA shows the fan as unavailable
+        too rather than silently accepting commands that will never be sent.
+        """
         remote_state = self.hass.states.get(self._remote_entity_id)
         if remote_state is None:
             return False
-
         return remote_state.state not in {STATE_UNAVAILABLE, STATE_UNKNOWN}
 
     async def async_added_to_hass(self) -> None:
-        """Register runtime-state listener."""
+        """Subscribe to runtime-state updates once the entity is registered."""
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,
@@ -108,57 +155,82 @@ class GoldairIRFanEntity(FanEntity):
             )
         )
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
     def _sync_attrs_from_runtime_state(self) -> None:
-        """Sync entity attributes from shared runtime state."""
+        """Copy the current runtime state into the HA entity attribute cache.
+
+        HA reads ``_attr_*`` attributes when building the entity state; calling
+        this method keeps them in sync after any change to ``_runtime_state``.
+        """
         self._attr_is_on = self._runtime_state.is_on
         self._attr_percentage = self._runtime_state.percentage
         self._attr_oscillating = self._runtime_state.oscillating
         self._attr_preset_mode = self._runtime_state.preset_mode
 
     def _handle_runtime_state_update(self) -> None:
-        """Handle shared runtime state updates."""
+        """Refresh HA state when the shared runtime state is updated by another entity."""
         self._sync_attrs_from_runtime_state()
         self.schedule_update_ha_state()
 
     def _publish_runtime_state(self) -> None:
-        """Notify all entities that runtime state has changed."""
+        """Broadcast a runtime-state-changed signal to all sibling entities."""
         async_dispatcher_send(self.hass, self._state_update_signal)
 
     async def _send_ir_command(self, command: str) -> None:
-        """Send a single IR command through the configured remote entity."""
+        """Send a single Broadlink raw IR command via the configured remote entity.
+
+        If not enough time has elapsed since the previous command, this method
+        sleeps for the remaining delay before transmitting.  This gives the
+        Broadlink hardware time to finish the previous transmission.
+
+        The command string is expected to be a base-64 blob (as stored in
+        ``const.py``).  The ``b64:`` prefix required by the Broadlink integration
+        is added automatically if it is missing.
+        """
         if not isinstance(command, str):
             raise TypeError("IR command must be a string")
 
+        # Enforce the inter-command delay if a previous command was sent recently.
         if self._last_ir_command_at is not None:
             elapsed = monotonic() - self._last_ir_command_at
             if elapsed < self._runtime_state.ir_command_delay_seconds:
                 await asyncio.sleep(self._runtime_state.ir_command_delay_seconds - elapsed)
 
+        # The Broadlink HA integration expects the payload prefixed with "b64:".
         command_payload = command if command.startswith("b64:") else f"b64:{command}"
         await self.hass.services.async_call(
             REMOTE_DOMAIN,
             SERVICE_SEND_COMMAND,
-            {
-                "command": [command_payload],
-            },
+            {"command": [command_payload]},
             target={"entity_id": self._remote_entity_id},
             blocking=True,
         )
         self._last_ir_command_at = monotonic()
 
     async def _async_power_on_if_needed(self) -> None:
-        """Ensure the fan is on before issuing cycle-based commands."""
+        """Send a power-on command if the fan is currently believed to be off.
+
+        Turning the fan on always lands at the lowest speed (33 %), no
+        oscillation, normal mode – matching the physical remote behaviour.
+        """
         if self.is_on:
             return
 
-        # Goldair power is a toggle; turning on always lands at lowest speed.
         await self._send_ir_command(IR_BLOB_POWER_TOGGLE)
+        # Update optimistic state to reflect the expected post-power-on condition.
         self._runtime_state.is_on = True
-        self._runtime_state.percentage = FAN_SPEEDS[0]
+        self._runtime_state.percentage = FAN_SPEEDS[0]   # lowest speed
         self._runtime_state.oscillating = False
-        self._runtime_state.preset_mode = PRESET_MODES[0]
+        self._runtime_state.preset_mode = PRESET_MODES[0]  # normal
         self._sync_attrs_from_runtime_state()
         self._publish_runtime_state()
+
+    # ------------------------------------------------------------------
+    # FanEntity service methods (called by HA automations / the UI)
+    # ------------------------------------------------------------------
 
     async def async_turn_on(
         self,
@@ -166,10 +238,10 @@ class GoldairIRFanEntity(FanEntity):
         preset_mode: str | None = None,
         **kwargs,
     ) -> None:
-        """Turn the fan on and optionally apply speed or preset mode."""
+        """Turn the fan on, optionally setting speed or preset at the same time."""
         await self._async_power_on_if_needed()
 
-        # Prioritize explicit preset requests over percentage requests.
+        # If both percentage and preset are provided, preset takes priority.
         if preset_mode is not None:
             await self.async_set_preset_mode(preset_mode)
         elif percentage is not None and percentage > 0:
@@ -179,11 +251,12 @@ class GoldairIRFanEntity(FanEntity):
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs) -> None:
-        """Turn the fan off using the power toggle command."""
+        """Turn the fan off using the power-toggle IR command."""
         if not self.is_on:
-            return
+            return  # already off; nothing to do
 
         await self._send_ir_command(IR_BLOB_POWER_TOGGLE)
+        # Reset all state to the "off" baseline.
         self._runtime_state.is_on = False
         self._runtime_state.percentage = 0
         self._runtime_state.oscillating = False
@@ -192,14 +265,22 @@ class GoldairIRFanEntity(FanEntity):
         self._publish_runtime_state()
 
     async def async_set_percentage(self, percentage: int) -> None:
-        """Set fan speed by cycling until the nearest discrete speed is reached."""
+        """Set fan speed by forward-cycling until the target speed is reached.
+
+        The Goldair remote only has a single speed key that cycles through three
+        steps: low (33 %) → medium (67 %) → high (100 %) → low …
+
+        We calculate the number of forward steps needed to go from the current
+        speed to the closest discrete speed and send that many IR blasts.
+        """
         if percentage <= 0:
             await self.async_turn_off()
             return
 
         await self._async_power_on_if_needed()
 
-        # If state drift happened, start from low-speed index as safe fallback.
+        # Guard against state drift where the stored speed is not one of the
+        # three known values (e.g. after an external power-cycle).
         if self.percentage not in FAN_SPEEDS:
             _LOGGER.warning(
                 "Fan speed state drift detected (%s); defaulting cycle base to %s",
@@ -210,11 +291,12 @@ class GoldairIRFanEntity(FanEntity):
         else:
             current_index = FAN_SPEEDS.index(self.percentage)
 
-        # Convert requested percentage to nearest discrete Goldair speed bucket.
+        # Round the requested percentage to the nearest supported speed bucket.
         target_speed = min(FAN_SPEEDS, key=lambda speed: abs(speed - percentage))
         target_index = FAN_SPEEDS.index(target_speed)
 
-        # Remote only supports forward cycling (low -> mid -> high -> low).
+        # Modular arithmetic gives us the forward-only step count:
+        # e.g. from index 2 (high) to index 0 (low) = (0 - 2) % 3 = 1 step.
         steps = (target_index - current_index) % len(FAN_SPEEDS)
         for _ in range(steps):
             await self._send_ir_command(IR_BLOB_SPEED_CYCLE)
@@ -224,9 +306,13 @@ class GoldairIRFanEntity(FanEntity):
         self._publish_runtime_state()
 
     async def async_oscillate(self, oscillating: bool) -> None:
-        """Toggle fan oscillation to match the requested boolean state."""
+        """Toggle oscillation to match the requested state.
+
+        The remote only has a toggle, so we only send the command if the
+        requested state differs from the current state.
+        """
         if self.oscillating == oscillating:
-            return
+            return  # already in the requested state
 
         await self._async_power_on_if_needed()
         await self._send_ir_command(IR_BLOB_OSC_TOGGLE)
@@ -235,13 +321,17 @@ class GoldairIRFanEntity(FanEntity):
         self._publish_runtime_state()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        """Set fan mode by cycling normal -> breeze -> night."""
+        """Set the wind-mode preset by forward-cycling to the requested mode.
+
+        Like speed, the Goldair remote cycles through presets with a single key:
+        normal → breeze → night → normal …
+        """
         if preset_mode not in PRESET_MODES:
             return
 
         await self._async_power_on_if_needed()
 
-        # Resolve optimistic current mode; default to normal when unknown.
+        # Guard against state drift in the same way as async_set_percentage.
         if self.preset_mode not in PRESET_MODES:
             _LOGGER.warning(
                 "Fan preset state drift detected (%s); defaulting cycle base to %s",
@@ -254,7 +344,7 @@ class GoldairIRFanEntity(FanEntity):
         current_index = PRESET_MODES.index(current_mode)
         target_index = PRESET_MODES.index(preset_mode)
 
-        # Mode key also cycles forward through all modes.
+        # Forward-only step count using modular arithmetic.
         steps = (target_index - current_index) % len(PRESET_MODES)
         for _ in range(steps):
             await self._send_ir_command(IR_BLOB_MODE_CYCLE)
