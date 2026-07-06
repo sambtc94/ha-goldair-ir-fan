@@ -209,7 +209,7 @@ class GoldairIRFanEntity(FanEntity):
         """Return the average watts from the rolling sample window."""
         if not self._power_samples:
             return None
-        return sum(sample for _, sample in self._power_samples) / len(self._power_samples)
+        return sum(watts for _, watts in self._power_samples) / len(self._power_samples)
 
     async def _handle_power_sensor_state_change(self, event: Event) -> None:
         """React to power-sensor state changes to keep the fan in sync.
@@ -260,8 +260,9 @@ class GoldairIRFanEntity(FanEntity):
             )
             self._auto_control_busy = True
             try:
-                # Turn on at low speed explicitly so the behaviour is predictable
-                # regardless of any future changes to async_turn_on defaults.
+                # FAN_SPEEDS[0] is the lowest speed step (33% / "low"). Keep
+                # this explicit so auto-on behavior remains deterministic even
+                # if async_turn_on defaults ever change.
                 await self.async_turn_on(percentage=FAN_SPEEDS[0])
             finally:
                 self._auto_control_busy = False
