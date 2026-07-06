@@ -8,14 +8,14 @@ DOMAIN = "goldair_ir_fan"
 # Config-entry key for the selected infrared emitter entity.
 CONF_IR_EMITTER = "ir_emitter"
 
-# Legacy key kept for backward compatibility with already-created entries.
-CONF_IR_BLASTER_LEGACY = "ir_blaster"
-
 # Friendly integration/entity name displayed in Home Assistant.
 DEFAULT_NAME = "Goldair IR Fan"
 
 # Supported user-facing preset mode labels.
 PRESET_MODES = ["normal", "breeze", "night"]
+
+# Delay required between consecutive IR commands sent to the emitter.
+IR_COMMAND_DELAY_SECONDS = 0.5
 
 # The Goldair remote uses a 38 kHz IR carrier with NEC protocol commands.
 NEC_MODULATION = 38_000

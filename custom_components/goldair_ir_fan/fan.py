@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from time import monotonic
+
 from infrared_protocols.commands import Command as InfraredCommand
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
@@ -11,10 +14,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    CONF_IR_BLASTER_LEGACY,
     CONF_IR_EMITTER,
     DEFAULT_NAME,
     IR_COMMAND_MODE_CYCLE,
+    IR_COMMAND_DELAY_SECONDS,
     IR_COMMAND_OSC_TOGGLE,
     IR_COMMAND_POWER_TOGGLE,
     IR_COMMAND_SPEED_CYCLE,
@@ -31,8 +34,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Goldair IR Fan entity from a config entry."""
-    # Prefer the new infrared emitter key, but support old saved entries.
-    ir_emitter = entry.data.get(CONF_IR_EMITTER) or entry.data.get(CONF_IR_BLASTER_LEGACY)
+    ir_emitter = entry.data.get(CONF_IR_EMITTER)
     if ir_emitter is None:
         return
 
@@ -68,10 +70,17 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity):
         self._attr_percentage = 0
         self._attr_oscillating = False
         self._attr_preset_mode = None
+        self._last_ir_command_at: float | None = None
 
     async def _send_ir_command(self, command: InfraredCommand) -> None:
         """Send a single IR command through the configured emitter."""
+        if self._last_ir_command_at is not None:
+            elapsed = monotonic() - self._last_ir_command_at
+            if elapsed < IR_COMMAND_DELAY_SECONDS:
+                await asyncio.sleep(IR_COMMAND_DELAY_SECONDS - elapsed)
+
         await self._send_command(command)
+        self._last_ir_command_at = monotonic()
 
     async def _async_power_on_if_needed(self) -> None:
         """Ensure the fan is on before issuing cycle-based commands."""
