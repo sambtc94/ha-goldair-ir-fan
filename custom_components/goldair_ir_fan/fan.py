@@ -199,9 +199,6 @@ class GoldairIRFanEntity(FanEntity):
 
         await self._async_power_on_if_needed()
 
-        # Manual speed changes must clear preset mode per fan entity docs.
-        self._runtime_state.preset_mode = None
-
         # If state drift happened, start from low-speed index as safe fallback.
         if self.percentage not in FAN_SPEEDS:
             _LOGGER.warning(
