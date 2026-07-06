@@ -217,9 +217,6 @@ class GoldairIRFanEntity(FanEntity):
             )
             return
 
-        # Store the latest reading in runtime state so the sensor entity can display it.
-        self._runtime_state.current_power_watts = watts
-
         threshold = self._runtime_state.power_threshold
 
         if watts > threshold and not self._runtime_state.is_on:
