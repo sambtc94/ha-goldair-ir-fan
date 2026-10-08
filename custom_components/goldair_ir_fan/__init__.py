@@ -2,100 +2,98 @@
 
 This module is the entry point for the integration.  Home Assistant calls:
 
+* ``async_migrate_entry`` – before setup, when a config entry was created by an
+                            older version of this integration.
 * ``async_setup_entry``   – when the integration is first loaded (or HA restarts).
-* ``async_unload_entry``  – when the user removes the integration.
-* ``async_update_options`` – when the user saves changes from the "Configure"
-                              button (options flow).
+* ``async_unload_entry``  – when the integration is removed or reloaded.
 
-The integration sets up a shared :class:`GoldairIRFanRuntimeState` object in
-``hass.data`` so that all platform entities (fan, switch, select) can read and
-write a single in-memory state without going through the entity registry.
+The integration stores a shared :class:`GoldairIRFanRuntimeState` object on
+``entry.runtime_data`` so that all platform entities (fan, sensor, switch,
+select) can read and write a single in-memory state.
+
+Saving the options form reloads the entry automatically (the options flow is
+an ``OptionsFlowWithReload``).
 """
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from __future__ import annotations
+
+import logging
+
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     CONF_IR_COMMAND_DELAY,
+    CONF_IR_EMITTER,
     CONF_POWER_LAG_SECONDS,
     CONF_POWER_MONITOR_ENTITY,
     CONF_POWER_THRESHOLD,
+    CONF_REMOTE_ENTITY,
     DEFAULT_POWER_LAG_SECONDS,
     DEFAULT_POWER_THRESHOLD,
-    DOMAIN,
     IR_COMMAND_DELAY_SECONDS,
 )
+from .entity import GoldairIRFanConfigEntry
 from .state import GoldairIRFanRuntimeState
 
-# All platform modules that this integration loads entity from.
+_LOGGER = logging.getLogger(__name__)
+
+# All platform modules that this integration loads entities from.
 PLATFORMS: list[str] = ["fan", "sensor", "switch", "select"]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: GoldairIRFanConfigEntry) -> bool:
     """Set up Goldair IR Fan from a config entry.
 
-    Called once per config entry on HA startup or when the entry is first added.
     Creates the shared runtime-state container and forwards setup to each platform.
     """
-    hass.data.setdefault(DOMAIN, {})
 
-    # Resolve the IR delay: prefer options (set via the Configure button) over
-    # the value stored during initial setup, falling back to the built-in default.
-    ir_delay = entry.options.get(
-        CONF_IR_COMMAND_DELAY,
-        entry.data.get(CONF_IR_COMMAND_DELAY, IR_COMMAND_DELAY_SECONDS),
+    def _option(key: str, default=None):
+        # Prefer options (set via the Configure button) over the value stored
+        # during initial setup, falling back to the built-in default.
+        return entry.options.get(key, entry.data.get(key, default))
+
+    entry.runtime_data = GoldairIRFanRuntimeState(
+        ir_command_delay_seconds=_option(CONF_IR_COMMAND_DELAY, IR_COMMAND_DELAY_SECONDS),
+        # Treat an empty string as "not set".
+        power_monitor_entity=_option(CONF_POWER_MONITOR_ENTITY) or None,
+        power_threshold=_option(CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD),
+        power_lag_seconds=_option(CONF_POWER_LAG_SECONDS, DEFAULT_POWER_LAG_SECONDS),
     )
 
-    # Resolve power-monitor settings (optional; None if not configured).
-    power_monitor_entity = entry.options.get(
-        CONF_POWER_MONITOR_ENTITY,
-        entry.data.get(CONF_POWER_MONITOR_ENTITY),
-    ) or None  # treat empty string as "not set"
-
-    power_threshold = entry.options.get(
-        CONF_POWER_THRESHOLD,
-        entry.data.get(CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD),
-    )
-
-    power_lag_seconds = entry.options.get(
-        CONF_POWER_LAG_SECONDS,
-        entry.data.get(CONF_POWER_LAG_SECONDS, DEFAULT_POWER_LAG_SECONDS),
-    )
-
-    hass.data[DOMAIN][entry.entry_id] = {
-        "runtime_state": GoldairIRFanRuntimeState(
-            ir_command_delay_seconds=ir_delay,
-            power_monitor_entity=power_monitor_entity,
-            power_threshold=power_threshold,
-            power_lag_seconds=power_lag_seconds,
-        ),
-    }
-
-    # Register the options-update listener so changes from the "Configure"
-    # button take effect without requiring an HA restart.
-    entry.async_on_unload(entry.add_update_listener(_async_update_options))
-
-    # Load fan, switch and select platforms.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
-async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the integration when the user saves the options flow.
-
-    A full reload is the cleanest way to apply changed settings (especially a
-    new power-monitor entity, which requires re-subscribing to state changes).
-    """
-    await hass.config_entries.async_reload(entry.entry_id)
+async def async_unload_entry(hass: HomeAssistant, entry: GoldairIRFanConfigEntry) -> bool:
+    """Unload a config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry and clean up hass.data.
+async def async_migrate_entry(hass: HomeAssistant, entry: GoldairIRFanConfigEntry) -> bool:
+    """Migrate a config entry created by an older version of this integration."""
+    if entry.version > 1:
+        # Downgraded from a newer version; we can't read its data.
+        return False
 
-    Home Assistant calls this when the user removes the integration or when HA
-    is restarting.  We unload all platform entities and delete our data bucket.
-    """
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
-    return unload_ok
+    if entry.minor_version < 2:
+        # 1.1 → 1.2: the fan's unique ID was built from the remote entity ID,
+        # and the config entry's unique ID *was* the remote entity ID.  That
+        # prevented two fans sharing one IR blaster.  Key both on the entry.
+        remote_entity = entry.data.get(CONF_REMOTE_ENTITY) or entry.data.get(
+            CONF_IR_EMITTER
+        )
+        old_fan_unique_id = f"{remote_entity}_goldair_ir_fan"
+        new_fan_unique_id = f"{entry.entry_id}_fan"
+
+        @callback
+        def _migrate_unique_id(entity_entry: er.RegistryEntry) -> dict | None:
+            if entity_entry.unique_id == old_fan_unique_id:
+                return {"new_unique_id": new_fan_unique_id}
+            return None
+
+        await er.async_migrate_entries(hass, entry.entry_id, _migrate_unique_id)
+        hass.config_entries.async_update_entry(entry, unique_id=None, minor_version=2)
+        _LOGGER.debug("Migrated %s to version 1.2", entry.title)
+
+    return True

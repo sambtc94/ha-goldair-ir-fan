@@ -3,8 +3,9 @@
     "step": {
       "user": {
         "title": "Goldair IR Fan",
-        "description": "Choose the remote entity that will transmit IR signals to your Goldair fan.",
+        "description": "Name the fan and choose the remote entity that will transmit IR signals to it.",
         "data": {
+          "name": "Name",
           "remote_entity": "Remote entity",
           "ir_command_delay": "IR command delay (seconds)",
           "power_monitor_entity": "Power monitor sensor (optional)",
@@ -12,6 +13,7 @@
           "power_lag_seconds": "Power lag confirmation delay (seconds)"
         },
         "data_description": {
+          "name": "Shown as the device name, e.g. \"Office Fan\". You can add several Goldair fans on the same IR blaster.",
           "remote_entity": "The Home Assistant remote entity connected to your IR blaster (e.g. a Broadlink device).",
           "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands.",
           "power_monitor_entity": "A sensor that reports the fan's power draw in watts. When set, the integration updates the Power override state based on the threshold below.",

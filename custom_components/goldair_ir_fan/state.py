@@ -5,10 +5,13 @@ Home Assistant has no way to *read* the current fan state from the device.
 We therefore maintain an *optimistic* in-memory state that tracks what we
 *believe* the fan is doing based on the commands we have sent.
 
-All platform entities (fan, switch, select) share a single instance of
+All platform entities (fan, switch, select, sensor) share a single instance of
 :class:`GoldairIRFanRuntimeState` so they all stay in sync.  When any entity
 changes the state it publishes a dispatcher signal (see :func:`state_update_signal`)
 so that sibling entities can refresh their HA state.
+
+The fan entity restores this state from its last recorded HA state on startup,
+so a restart or an options change does not reset the fan to "off".
 """
 
 from __future__ import annotations
@@ -16,7 +19,9 @@ from __future__ import annotations
 from .const import (
     DEFAULT_POWER_LAG_SECONDS,
     DEFAULT_POWER_THRESHOLD,
+    FAN_SPEEDS,
     IR_COMMAND_DELAY_SECONDS,
+    PRESET_MODES,
 )
 
 
@@ -67,3 +72,20 @@ class GoldairIRFanRuntimeState:
         self.power_monitor_entity: str | None = power_monitor_entity
         self.power_threshold: float = power_threshold
         self.power_lag_seconds: float = power_lag_seconds
+
+    def set_off(self) -> None:
+        """Mark the fan as off and reset all derived state."""
+        self.is_on = False
+        self.percentage = 0
+        self.oscillating = False
+        self.preset_mode = None
+
+    def set_on_defaults(self) -> None:
+        """Mark the fan as on in its power-on state: low speed, normal, no swing.
+
+        This matches what the physical fan does after a power-on press.
+        """
+        self.is_on = True
+        self.percentage = FAN_SPEEDS[0]
+        self.oscillating = False
+        self.preset_mode = PRESET_MODES[0]
