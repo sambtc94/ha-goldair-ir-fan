@@ -3,22 +3,27 @@
     "step": {
       "user": {
         "title": "Goldair IR Fan",
-        "description": "Choose the remote entity that will transmit IR signals to your Goldair fan.",
+        "description": "Name the fan and choose the infrared emitter that will send IR commands to it.",
         "data": {
-          "remote_entity": "Remote entity",
+          "name": "Name",
+          "infrared_entity": "Infrared emitter",
           "ir_command_delay": "IR command delay (seconds)",
           "power_monitor_entity": "Power monitor sensor (optional)",
           "power_threshold": "Power threshold (watts)",
           "power_lag_seconds": "Power lag confirmation delay (seconds)"
         },
         "data_description": {
-          "remote_entity": "The Home Assistant remote entity connected to your IR blaster (e.g. a Broadlink device).",
+          "name": "Shown as the device name, e.g. \"Office Fan\". You can add several Goldair fans on the same IR blaster.",
+          "infrared_entity": "The IR blaster to send commands through, e.g. a Broadlink's \"IR emitter\" entity.",
           "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands.",
           "power_monitor_entity": "A sensor that reports the fan's power draw in watts. When set, the integration updates the Power override state based on the threshold below.",
           "power_threshold": "If power is above this value Power override is set on; at or below it Power override is set off, after the delay below. Default is 10 W.",
           "power_lag_seconds": "How long power must remain past threshold before applying override changes. Default is 60 seconds (1 minute)."
         }
       }
+    },
+    "abort": {
+      "no_emitters": "No infrared emitters were found. Set up an IR blaster that provides an infrared emitter entity (such as Broadlink or an ESPHome IR transmitter) first."
     }
   },
   "options": {

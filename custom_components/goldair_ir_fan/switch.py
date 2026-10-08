@@ -21,43 +21,33 @@ Entities provided
 from __future__ import annotations
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.entity import EntityCategory
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import DEFAULT_NAME, DOMAIN, FAN_SPEEDS, PRESET_MODES, state_update_signal
-from .state import GoldairIRFanRuntimeState
+from .const import FAN_SPEEDS, PRESET_MODES
+from .entity import GoldairIRFanConfigEntry, GoldairIRFanOverrideEntity
+
+# Override entities only touch in-memory state, so they can run in parallel.
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: GoldairIRFanConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Goldair IR Fan switch entities from a config entry."""
-    runtime_state: GoldairIRFanRuntimeState = hass.data[DOMAIN][entry.entry_id]["runtime_state"]
-    signal = state_update_signal(entry.entry_id)
-    # Reuse the same DeviceInfo so all entities appear under one device card.
-    device_info = DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name=DEFAULT_NAME,
-        manufacturer="Goldair",
-        model="IR Fan",
-    )
     async_add_entities(
         [
-            GoldairIRPowerOverrideSwitchEntity(runtime_state, signal, device_info, entry.entry_id),
-            GoldairIROscillationOverrideSwitchEntity(
-                runtime_state, signal, device_info, entry.entry_id
-            ),
+            GoldairIRPowerOverrideSwitchEntity(entry, "power_override"),
+            GoldairIROscillationOverrideSwitchEntity(entry, "oscillation_override"),
         ]
     )
 
 
-class GoldairIRPowerOverrideSwitchEntity(SwitchEntity):
+class GoldairIRPowerOverrideSwitchEntity(GoldairIRFanOverrideEntity, SwitchEntity):
     """Diagnostic switch that manually overrides the optimistic power state.
 
     Turn this ON  → tell the integration "the fan is running at low speed".
@@ -66,35 +56,11 @@ class GoldairIRPowerOverrideSwitchEntity(SwitchEntity):
     No IR command is sent; only the tracked state is updated.
     """
 
-    _attr_has_entity_name = True
     _attr_name = "Power override"
     # DIAGNOSTIC hides this entity from the main dashboard and marks it as
     # an advanced/internal control in the entity list.
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:power"
-
-    def __init__(
-        self,
-        runtime_state: GoldairIRFanRuntimeState,
-        signal: str,
-        device_info: DeviceInfo,
-        entry_id: str,
-    ) -> None:
-        """Initialize the power override switch."""
-        self._runtime_state = runtime_state
-        self._signal = signal
-        self._attr_device_info = device_info
-        self._attr_unique_id = f"{entry_id}_power_override"
-
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to runtime-state updates so the switch stays in sync."""
-        self.async_on_remove(
-            async_dispatcher_connect(self.hass, self._signal, self._handle_runtime_state_update)
-        )
-
-    def _handle_runtime_state_update(self) -> None:
-        """Refresh HA state when a sibling entity changes the runtime state."""
-        self.schedule_update_ha_state()
 
     @property
     def is_on(self) -> bool:
@@ -103,22 +69,18 @@ class GoldairIRPowerOverrideSwitchEntity(SwitchEntity):
 
     async def async_turn_on(self, **kwargs) -> None:
         """Override state: mark fan as on at low speed, no oscillation, normal mode."""
-        self._runtime_state.is_on = True
-        self._runtime_state.percentage = FAN_SPEEDS[0]    # low = 33 %
-        self._runtime_state.oscillating = False
-        self._runtime_state.preset_mode = PRESET_MODES[0]  # normal
+        self._runtime_state.set_on_defaults()
         async_dispatcher_send(self.hass, self._signal)
 
     async def async_turn_off(self, **kwargs) -> None:
         """Override state: mark fan as off and reset all derived state."""
-        self._runtime_state.is_on = False
-        self._runtime_state.percentage = 0
-        self._runtime_state.oscillating = False
-        self._runtime_state.preset_mode = None
+        self._runtime_state.set_off()
         async_dispatcher_send(self.hass, self._signal)
 
 
-class GoldairIROscillationOverrideSwitchEntity(SwitchEntity):
+class GoldairIROscillationOverrideSwitchEntity(
+    GoldairIRFanOverrideEntity, SwitchEntity
+):
     """Diagnostic switch that manually overrides the optimistic oscillation state.
 
     Turn ON  → tell the integration "the fan is currently oscillating".
@@ -127,33 +89,9 @@ class GoldairIROscillationOverrideSwitchEntity(SwitchEntity):
     No IR command is sent; only the tracked state is updated.
     """
 
-    _attr_has_entity_name = True
     _attr_name = "Oscillation override"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:rotate-3d-variant"
-
-    def __init__(
-        self,
-        runtime_state: GoldairIRFanRuntimeState,
-        signal: str,
-        device_info: DeviceInfo,
-        entry_id: str,
-    ) -> None:
-        """Initialize the oscillation override switch."""
-        self._runtime_state = runtime_state
-        self._signal = signal
-        self._attr_device_info = device_info
-        self._attr_unique_id = f"{entry_id}_oscillation_override"
-
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to runtime-state updates so the switch stays in sync."""
-        self.async_on_remove(
-            async_dispatcher_connect(self.hass, self._signal, self._handle_runtime_state_update)
-        )
-
-    def _handle_runtime_state_update(self) -> None:
-        """Refresh HA state when a sibling entity changes the runtime state."""
-        self.schedule_update_ha_state()
 
     @property
     def is_on(self) -> bool:

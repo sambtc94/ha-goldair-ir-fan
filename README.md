@@ -2,9 +2,20 @@
 
 Home Assistant integration for the Goldair IR fan.
 
+## Requirements
+
+- Home Assistant 2026.6 or later.
+- An IR blaster that provides an **infrared emitter** entity (`infrared.*`), such as a Broadlink remote or an ESPHome IR transmitter.
+
 ## Setup
 
-Add the integration and select your remote emitter (`remote` entity) during setup.
+Add the integration, give the fan a name (e.g. "Office Fan") and choose the infrared emitter it should send commands through. You can add several Goldair fans on the same IR blaster.
+
+### Upgrading from 0.1.x
+
+Earlier versions sent codes with `remote.send_command`. On upgrade, existing fans are moved automatically to the infrared emitter on the same device as their old remote entity (for a Broadlink, `remote.x` → `infrared.x_ir_emitter`). Entity IDs, automations and options carry over unchanged.
+
+If no emitter is found on that device, the entry shows a migration error in **Settings → Devices & services**; delete it and add the fan again.
 
 ## Functionality
 
@@ -14,10 +25,14 @@ Add the integration and select your remote emitter (`remote` entity) during setu
 - 3-speed cycling (`speed` control)
 - Oscillation toggle (`osc` control)
 - 3-mode cycling (`mode`: normal, breeze, night)
-- Adjustable IR command delay entity (default 500ms)
+- Commands sent through Home Assistant's infrared platform; the learned Broadlink codes are decoded to raw IR timings, so any infrared emitter can send them
+- The fan's tracked state is restored after a restart or an options change
+- Commands are queued, so rapid or overlapping changes never send the wrong number of cycle presses
+- The fan shows as unavailable while its infrared emitter is unavailable
+- Configurable IR command delay (default 500 ms) in the integration's options
+- Optional power monitor: a power sensor and threshold that correct the tracked on/off state when the fan is switched with its physical remote
 - Override entities for optimistic state resync: power, speed (dropdown), oscillation, and preset
 - Override entities are exposed in the `diagnostic` category
-- Uses `remote.send_command` with Broadlink-compatible raw IR payloads (`b64:` prefixed)
 
 ## Icons
 
