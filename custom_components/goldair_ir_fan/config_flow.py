@@ -3,7 +3,8 @@
 Home Assistant calls this module in two situations:
 
 1. **Initial setup** (async_step_user) – the user names the fan, picks the
-   remote entity and optionally sets the IR delay and power-monitor settings.
+   infrared emitter (e.g. a Broadlink's IR emitter entity) and optionally sets
+   the IR delay and power-monitor settings.
    The result is stored in ``entry.data``.
 
 2. **Options** (GoldairIRFanOptionsFlowHandler) – the user presses
@@ -18,7 +19,7 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components.remote import DOMAIN as REMOTE_DOMAIN
+from homeassistant.components import infrared
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -27,14 +28,14 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
-from homeassistant.helpers import selector
+from homeassistant.helpers import entity_registry as er, selector
 
 from .const import (
+    CONF_INFRARED_ENTITY,
     CONF_IR_COMMAND_DELAY,
     CONF_POWER_LAG_SECONDS,
     CONF_POWER_MONITOR_ENTITY,
     CONF_POWER_THRESHOLD,
-    CONF_REMOTE_ENTITY,
     DEFAULT_NAME,
     DEFAULT_POWER_LAG_SECONDS,
     DEFAULT_POWER_THRESHOLD,
@@ -116,19 +117,27 @@ class GoldairIRFanConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Goldair IR Fan."""
 
     # Bumping VERSION/MINOR_VERSION runs async_migrate_entry for older entries.
-    VERSION = 1
-    MINOR_VERSION = 2
+    VERSION = 2
+    MINOR_VERSION = 1
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle the initial setup step shown when the user adds the integration."""
+        emitters = infrared.async_get_emitters(self.hass)
+        if not emitters:
+            return self.async_abort(reason="no_emitters")
+
         if user_input is not None:
+            # Store the emitter by registry ID so renaming it doesn't break the fan.
+            emitter = user_input[CONF_INFRARED_ENTITY]
+            if (registry_entry := er.async_get(self.hass).async_get(emitter)) is not None:
+                emitter = registry_entry.id
             # No unique ID: several fans may share the same IR blaster.
             return self.async_create_entry(
                 title=user_input[CONF_NAME],
                 data={
-                    CONF_REMOTE_ENTITY: user_input[CONF_REMOTE_ENTITY],
+                    CONF_INFRARED_ENTITY: emitter,
                     **_settings_from_input(user_input),
                 },
             )
@@ -136,9 +145,13 @@ class GoldairIRFanConfigFlow(ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=DEFAULT_NAME): selector.TextSelector(),
-                # Only remote-domain entities can transmit Broadlink raw commands.
-                vol.Required(CONF_REMOTE_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain=REMOTE_DOMAIN)
+                vol.Required(
+                    CONF_INFRARED_ENTITY,
+                    default=emitters[0] if len(emitters) == 1 else vol.UNDEFINED,
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=infrared.DOMAIN, include_entities=emitters
+                    )
                 ),
                 **_settings_schema(
                     IR_COMMAND_DELAY_SECONDS,

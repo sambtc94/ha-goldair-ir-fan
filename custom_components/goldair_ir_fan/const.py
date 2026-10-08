@@ -13,8 +13,13 @@ DOMAIN = "goldair_ir_fan"
 # Config-entry keys
 # ---------------------------------------------------------------------------
 
-# Key used to store the selected remote entity (e.g. remote.broadlink_xxxx)
-# inside the config-entry data dict.
+# Key used to store the selected infrared emitter inside the config-entry data
+# dict.  The value is the emitter's entity-registry ID (a UUID), so renaming
+# the emitter entity doesn't break the fan.
+CONF_INFRARED_ENTITY = "infrared_entity"
+
+# Key used by config-entry version 1 to store the remote entity
+# (e.g. remote.broadlink_xxxx).  Only read when migrating old entries.
 CONF_REMOTE_ENTITY = "remote_entity"
 
 # Key used to store the inter-command IR delay (in seconds) inside the
@@ -22,8 +27,8 @@ CONF_REMOTE_ENTITY = "remote_entity"
 # updated from the integration's "Configure" button without re-adding it.
 CONF_IR_COMMAND_DELAY = "ir_command_delay"
 
-# Legacy config-entry key written by earlier versions of this integration.
-# Kept here so existing entries continue to work after an upgrade.
+# Legacy config-entry key written by the earliest versions of this
+# integration.  Only read when migrating old entries.
 CONF_IR_EMITTER = "ir_emitter"
 
 # Key for an optional power-monitor sensor entity.  When set, the integration
@@ -97,6 +102,9 @@ POWER_LAG_STEP_SECONDS = 1.0           # step granularity for the UI slider
 #   IR_BLOB_SPEED_CYCLE   – speed button (cycles Low → Medium → High → Low)
 #   IR_BLOB_OSC_TOGGLE    – oscillation button (toggles swing on/off)
 #   IR_BLOB_MODE_CYCLE    – mode button (cycles Normal → Breeze → Night)
+#
+# commands.py decodes these into raw timings for HA's infrared platform, so
+# they work with any infrared emitter, not just Broadlink.
 #
 # To capture new codes for a different Goldair model use the HA service:
 #   remote.learn_command  (target your Broadlink remote entity)
