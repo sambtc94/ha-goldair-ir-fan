@@ -227,30 +227,46 @@ class GoldairIRFanEntity(InfraredEmitterConsumerEntity, FanEntity, RestoreEntity
         """Compare a power reading against the threshold and the believed state.
 
         When the reading crosses the threshold relative to the current optimistic
-        power state, a delayed confirmation timer is started.  Once that timer
-        elapses we re-check the latest reading and only apply the override if it
-        is still on the same side of the threshold.
+        power state, a delayed confirmation timer is started (the power-on delay
+        or the longer power-off delay).  Once that timer elapses we re-check the
+        latest reading and only apply the override if it is still on the same
+        side of the threshold.
 
-        States that cannot be parsed as a number (unavailable, unknown, etc.)
-        are ignored.
+        Zigbee dropout failsafe: a reading that isn't a number (unavailable,
+        unknown, etc.) means "no information", not "0 W".  It cancels any
+        pending confirmation and forgets the last reading, so the timer must
+        start again from the next real reading.  A stale glitch value can
+        therefore never turn the fan off, and the fan is only marked off after
+        an uninterrupted run of low readings lasting the full power-off delay.
         """
-        if state is None or state.state in {STATE_UNAVAILABLE, STATE_UNKNOWN}:
-            return
+        watts: float | None = None
+        if state is not None and state.state not in {STATE_UNAVAILABLE, STATE_UNKNOWN}:
+            try:
+                watts = float(state.state)
+            except (ValueError, TypeError):
+                watts = None
 
-        try:
-            watts = float(state.state)
-        except (ValueError, TypeError):
-            _LOGGER.debug(
-                "Power sensor %s reported non-numeric state '%s'; ignoring",
-                self._runtime_state.power_monitor_entity,
-                state.state,
-            )
+        if watts is None:
+            if self._pending_override_task is not None:
+                _LOGGER.debug(
+                    "Power sensor %s is '%s'; treating as a dropout and "
+                    "restarting the power confirmation timer",
+                    self._runtime_state.power_monitor_entity,
+                    state.state if state is not None else None,
+                )
+            self._latest_power_watts = None
+            self._cancel_pending_override_confirmation()
             return
 
         self._latest_power_watts = watts
         threshold = self._runtime_state.power_threshold
-        lag_seconds = max(0.0, self._runtime_state.power_lag_seconds)
         target_is_on = watts > threshold
+        lag_seconds = max(
+            0.0,
+            self._runtime_state.power_lag_seconds
+            if target_is_on
+            else self._runtime_state.power_off_delay_seconds,
+        )
 
         # No change needed; cancel any previously pending opposite confirmation.
         if target_is_on == self._runtime_state.is_on:

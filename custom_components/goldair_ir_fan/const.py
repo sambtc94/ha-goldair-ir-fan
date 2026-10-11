@@ -40,8 +40,15 @@ CONF_POWER_MONITOR_ENTITY = "power_monitor_entity"
 # Readings above this value set override power state to on; at/below sets off.
 CONF_POWER_THRESHOLD = "power_threshold"
 
-# Key for the confirmation delay (seconds) used for power-monitor decisions.
+# Key for the confirmation delay (seconds) before a power reading above the
+# threshold marks the fan on.  (Name kept for compatibility with saved entries.)
 CONF_POWER_LAG_SECONDS = "power_lag_seconds"
+
+# Key for the confirmation delay (seconds) before a power reading at/below the
+# threshold marks the fan off.  Kept separate and longer than the "on" delay
+# because Zigbee power plugs drop out (report 0, unknown or unavailable) now
+# and then while the fan is still running.
+CONF_POWER_OFF_DELAY_SECONDS = "power_off_delay_seconds"
 
 # ---------------------------------------------------------------------------
 # Display name
@@ -85,9 +92,12 @@ POWER_THRESHOLD_MIN = 0.0              # watts
 POWER_THRESHOLD_MAX = 500.0            # watts
 POWER_THRESHOLD_STEP = 0.5            # step granularity for the UI slider
 
-# Default confirmation delay for power decisions. Readings must remain beyond
-# threshold for this long before toggling optimistic power override.
+# Default confirmation delay before a reading above the threshold marks the fan on.
 DEFAULT_POWER_LAG_SECONDS = 60.0       # 1 minute
+# Default confirmation delay before a reading at/below the threshold marks the
+# fan off.  Readings must stay low, uninterrupted by any unavailable/unknown
+# state, for this long.  Shares the min/max/step limits below.
+DEFAULT_POWER_OFF_DELAY_SECONDS = 300.0  # 5 minutes
 POWER_LAG_MIN_SECONDS = 0.0            # 0 = immediate threshold handling
 POWER_LAG_MAX_SECONDS = 3600.0         # 1 hour upper bound
 POWER_LAG_STEP_SECONDS = 1.0           # step granularity for the UI slider

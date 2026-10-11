@@ -31,6 +31,7 @@ If no emitter is found on that device, the entry shows a migration error in **Se
 - The fan shows as unavailable while its infrared emitter is unavailable
 - Configurable IR command delay (default 500 ms) in the integration's options
 - Optional power monitor: a power sensor and threshold that correct the tracked on/off state when the fan is switched with its physical remote
+- Power-monitor dropout failsafe: separate on (default 1 min) and off (default 5 min) confirmation delays; an unavailable or unknown reading restarts the timer, so a flaky Zigbee plug can't switch the fan off in Home Assistant
 - Override entities for optimistic state resync: power, speed (dropdown), oscillation, and preset
 - Override entities are exposed in the `diagnostic` category
 

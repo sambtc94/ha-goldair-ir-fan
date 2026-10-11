@@ -35,9 +35,11 @@ from .const import (
     CONF_IR_COMMAND_DELAY,
     CONF_POWER_LAG_SECONDS,
     CONF_POWER_MONITOR_ENTITY,
+    CONF_POWER_OFF_DELAY_SECONDS,
     CONF_POWER_THRESHOLD,
     DEFAULT_NAME,
     DEFAULT_POWER_LAG_SECONDS,
+    DEFAULT_POWER_OFF_DELAY_SECONDS,
     DEFAULT_POWER_THRESHOLD,
     DOMAIN,
     IR_COMMAND_DELAY_MAX_SECONDS,
@@ -73,6 +75,7 @@ def _settings_schema(
     power_entity: str | None,
     threshold: float,
     lag_seconds: float,
+    off_delay_seconds: float,
 ) -> dict:
     """Return the schema fields shared by the setup and options forms."""
     return {
@@ -94,6 +97,11 @@ def _settings_schema(
         vol.Required(CONF_POWER_LAG_SECONDS, default=lag_seconds): _number_selector(
             POWER_LAG_MIN_SECONDS, POWER_LAG_MAX_SECONDS, POWER_LAG_STEP_SECONDS, "s"
         ),
+        vol.Required(
+            CONF_POWER_OFF_DELAY_SECONDS, default=off_delay_seconds
+        ): _number_selector(
+            POWER_LAG_MIN_SECONDS, POWER_LAG_MAX_SECONDS, POWER_LAG_STEP_SECONDS, "s"
+        ),
     }
 
 
@@ -109,6 +117,9 @@ def _settings_from_input(user_input: dict[str, Any]) -> dict[str, Any]:
         ),
         CONF_POWER_LAG_SECONDS: user_input.get(
             CONF_POWER_LAG_SECONDS, DEFAULT_POWER_LAG_SECONDS
+        ),
+        CONF_POWER_OFF_DELAY_SECONDS: user_input.get(
+            CONF_POWER_OFF_DELAY_SECONDS, DEFAULT_POWER_OFF_DELAY_SECONDS
         ),
     }
 
@@ -158,6 +169,7 @@ class GoldairIRFanConfigFlow(ConfigFlow, domain=DOMAIN):
                     None,
                     DEFAULT_POWER_THRESHOLD,
                     DEFAULT_POWER_LAG_SECONDS,
+                    DEFAULT_POWER_OFF_DELAY_SECONDS,
                 ),
             }
         )
@@ -195,6 +207,7 @@ class GoldairIRFanOptionsFlowHandler(OptionsFlowWithReload):
                 _current(CONF_POWER_MONITOR_ENTITY),
                 _current(CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD),
                 _current(CONF_POWER_LAG_SECONDS, DEFAULT_POWER_LAG_SECONDS),
+                _current(CONF_POWER_OFF_DELAY_SECONDS, DEFAULT_POWER_OFF_DELAY_SECONDS),
             )
         )
         return self.async_show_form(step_id="init", data_schema=schema)
