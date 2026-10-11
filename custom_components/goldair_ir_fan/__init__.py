@@ -34,9 +34,11 @@ from .const import (
     CONF_IR_EMITTER,
     CONF_POWER_LAG_SECONDS,
     CONF_POWER_MONITOR_ENTITY,
+    CONF_POWER_OFF_DELAY_SECONDS,
     CONF_POWER_THRESHOLD,
     CONF_REMOTE_ENTITY,
     DEFAULT_POWER_LAG_SECONDS,
+    DEFAULT_POWER_OFF_DELAY_SECONDS,
     DEFAULT_POWER_THRESHOLD,
     IR_COMMAND_DELAY_SECONDS,
 )
@@ -76,6 +78,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GoldairIRFanConfigEntry)
         power_monitor_entity=_option(CONF_POWER_MONITOR_ENTITY) or None,
         power_threshold=_option(CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD),
         power_lag_seconds=_option(CONF_POWER_LAG_SECONDS, DEFAULT_POWER_LAG_SECONDS),
+        power_off_delay_seconds=_option(
+            CONF_POWER_OFF_DELAY_SECONDS, DEFAULT_POWER_OFF_DELAY_SECONDS
+        ),
         infrared_entity_id=infrared_entity_id,
     )
 

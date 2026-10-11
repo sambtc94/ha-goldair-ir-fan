@@ -10,15 +10,17 @@
           "ir_command_delay": "IR command delay (seconds)",
           "power_monitor_entity": "Power monitor sensor (optional)",
           "power_threshold": "Power threshold (watts)",
-          "power_lag_seconds": "Power lag confirmation delay (seconds)"
+          "power_lag_seconds": "Power-on confirmation delay (seconds)",
+          "power_off_delay_seconds": "Power-off confirmation delay (seconds)"
         },
         "data_description": {
           "name": "Shown as the device name, e.g. \"Office Fan\". You can add several Goldair fans on the same IR blaster.",
           "infrared_entity": "The IR blaster to send commands through, e.g. a Broadlink's \"IR emitter\" entity.",
           "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands.",
           "power_monitor_entity": "A sensor that reports the fan's power draw in watts. When set, the integration updates the Power override state based on the threshold below.",
-          "power_threshold": "If power is above this value Power override is set on; at or below it Power override is set off, after the delay below. Default is 10 W.",
-          "power_lag_seconds": "How long power must remain past threshold before applying override changes. Default is 60 seconds (1 minute)."
+          "power_threshold": "If power is above this value Power override is set on; at or below it Power override is set off, after the delays below. Default is 10 W.",
+          "power_lag_seconds": "How long power must stay above the threshold before the fan is marked on. Default is 60 seconds (1 minute).",
+          "power_off_delay_seconds": "How long power must stay at or below the threshold, with no unavailable or unknown readings in between, before the fan is marked off. A sensor dropout restarts this timer. Default is 300 seconds (5 minutes)."
         }
       }
     },
@@ -35,13 +37,15 @@
           "ir_command_delay": "IR command delay (seconds)",
           "power_monitor_entity": "Power monitor sensor (optional)",
           "power_threshold": "Power threshold (watts)",
-          "power_lag_seconds": "Power lag confirmation delay (seconds)"
+          "power_lag_seconds": "Power-on confirmation delay (seconds)",
+          "power_off_delay_seconds": "Power-off confirmation delay (seconds)"
         },
         "data_description": {
           "ir_command_delay": "Minimum pause between consecutive IR commands. Increase this if your fan misses commands.",
           "power_monitor_entity": "A sensor that reports the fan's power draw in watts. Leave blank to disable automatic Power override updates.",
-          "power_threshold": "If power is above this value Power override is set on; at or below it Power override is set off, after the delay below. Default is 10 W.",
-          "power_lag_seconds": "How long power must remain past threshold before applying override changes. Default is 60 seconds (1 minute)."
+          "power_threshold": "If power is above this value Power override is set on; at or below it Power override is set off, after the delays below. Default is 10 W.",
+          "power_lag_seconds": "How long power must stay above the threshold before the fan is marked on. Default is 60 seconds (1 minute).",
+          "power_off_delay_seconds": "How long power must stay at or below the threshold, with no unavailable or unknown readings in between, before the fan is marked off. A sensor dropout restarts this timer. Default is 300 seconds (5 minutes)."
         }
       }
     }

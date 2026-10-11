@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from .const import (
     DEFAULT_POWER_LAG_SECONDS,
+    DEFAULT_POWER_OFF_DELAY_SECONDS,
     DEFAULT_POWER_THRESHOLD,
     FAN_SPEEDS,
     IR_COMMAND_DELAY_SECONDS,
@@ -50,8 +51,12 @@ class GoldairIRFanRuntimeState:
         strictly above this value set override power state to on; readings at
         or below it set override power state to off.
     power_lag_seconds
-        Confirmation delay (seconds) before applying threshold decisions.
-        A value of ``0`` applies threshold decisions immediately.
+        Confirmation delay (seconds) before a reading above the threshold marks
+        the fan on.  A value of ``0`` applies it immediately.
+    power_off_delay_seconds
+        Confirmation delay (seconds) before a reading at or below the threshold
+        marks the fan off.  The low readings must be uninterrupted by any
+        unavailable/unknown state for the whole delay.
     infrared_entity_id
         Entity ID of the infrared emitter the fan sends commands through.
     """
@@ -62,6 +67,7 @@ class GoldairIRFanRuntimeState:
         power_monitor_entity: str | None = None,
         power_threshold: float = DEFAULT_POWER_THRESHOLD,
         power_lag_seconds: float = DEFAULT_POWER_LAG_SECONDS,
+        power_off_delay_seconds: float = DEFAULT_POWER_OFF_DELAY_SECONDS,
         infrared_entity_id: str = "",
     ) -> None:
         """Initialize state with the configured IR delay and optional power monitor."""
@@ -75,6 +81,7 @@ class GoldairIRFanRuntimeState:
         self.power_monitor_entity: str | None = power_monitor_entity
         self.power_threshold: float = power_threshold
         self.power_lag_seconds: float = power_lag_seconds
+        self.power_off_delay_seconds: float = power_off_delay_seconds
         self.infrared_entity_id: str = infrared_entity_id
 
     def set_off(self) -> None:
